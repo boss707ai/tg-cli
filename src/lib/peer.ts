@@ -1,5 +1,6 @@
 import { TelegramClient, Api } from 'telegram';
 import { TgError } from './errors.js';
+import { isBlockedInput, isBlockedEntity } from './blocklist.js';
 
 /**
  * Assert that an entity is a forum-enabled supergroup when topicId is provided.
@@ -81,6 +82,25 @@ export async function resolveEntity(
   client: TelegramClient,
   input: string,
 ): Promise<Api.User | Api.Chat | Api.Channel> {
+  // Local read-access blocklist (privacy guard) — chokepoint for ALL peer access.
+  const guard = (
+    e: Api.User | Api.Chat | Api.Channel,
+  ): Api.User | Api.Chat | Api.Channel => {
+    if (isBlockedEntity(e)) {
+      throw new TgError(
+        'Chat is blocked by local read-access policy (blocked-chats.txt)',
+        'CHAT_BLOCKED',
+      );
+    }
+    return e;
+  };
+  if (isBlockedInput(input)) {
+    throw new TgError(
+      'Chat is blocked by local read-access policy (blocked-chats.txt)',
+      'CHAT_BLOCKED',
+    );
+  }
+
   // Invite link: extract hash and use CheckChatInvite
   if (isInviteLink(input)) {
     const hash = extractInviteHash(input);
@@ -90,7 +110,7 @@ export async function resolveEntity(
       );
       // Return the chat from the result (ChatInviteAlready has .chat,
       // ChatInvite has the invite info, ChatInvitePeek has .chat)
-      return (result as any).chat ?? result;
+      return guard((result as any).chat ?? result);
     } catch (err) {
       if (err instanceof TgError) throw err;
       throw new TgError(
@@ -103,7 +123,7 @@ export async function resolveEntity(
   // Phone number: pass as-is to getEntity
   if (isPhoneNumber(input)) {
     try {
-      return (await client.getEntity(input)) as Api.User | Api.Chat | Api.Channel;
+      return guard((await client.getEntity(input)) as Api.User | Api.Chat | Api.Channel);
     } catch (err) {
       if (err instanceof TgError) throw err;
       throw new TgError(
@@ -117,7 +137,7 @@ export async function resolveEntity(
   if (isNumericId(input)) {
     const numId = Number(input);
     try {
-      return (await client.getEntity(numId)) as Api.User | Api.Chat | Api.Channel;
+      return guard((await client.getEntity(numId)) as Api.User | Api.Chat | Api.Channel);
     } catch (err) {
       if (err instanceof TgError) throw err;
       throw new TgError(
@@ -130,7 +150,7 @@ export async function resolveEntity(
   // Username: strip leading @ if present
   const username = input.startsWith('@') ? input.slice(1) : input;
   try {
-    return (await client.getEntity(username)) as Api.User | Api.Chat | Api.Channel;
+    return guard((await client.getEntity(username)) as Api.User | Api.Chat | Api.Channel);
   } catch (err) {
     if (err instanceof TgError) throw err;
     throw new TgError(

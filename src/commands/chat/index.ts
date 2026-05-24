@@ -11,6 +11,7 @@ import { chatSearchAction } from './search.js';
 import { chatCreateAction } from './create.js';
 import { chatEditAction } from './edit.js';
 import { chatKickAction } from './kick.js';
+import { chatFoldersAction } from './folders.js';
 
 /**
  * Create the `chat` command group with 8 subcommands for chat discovery and management.
@@ -33,9 +34,15 @@ export function createChatCommand(): Command {
     .command('list')
     .description('List all chats/dialogs')
     .option('--type <type>', 'Filter by type: user, group, channel, supergroup')
-    .option('--limit <n>', 'Max results', '50')
+    .option('--folder <id|title>', 'Only chats in this Telegram folder (dialog filter)')
+    .option('--limit <n>', 'Max results (default 50; whole folder when --folder is set)')
     .option('--offset <n>', 'Skip results', '0')
     .action(chatListAction);
+
+  chat
+    .command('folders')
+    .description('List Telegram chat folders (use `chat list --folder <id|title>` for contents)')
+    .action(chatFoldersAction);
 
   chat
     .command('info')
