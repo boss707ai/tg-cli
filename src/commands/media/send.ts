@@ -5,7 +5,8 @@ import { outputSuccess, outputError, logStatus } from '../../lib/output.js';
 import { TgError } from '../../lib/errors.js';
 import { resolveEntity, assertForum } from '../../lib/peer.js';
 import { serializeMessage } from '../../lib/serialize.js';
-import { detectFileType } from '../../lib/media-utils.js';
+import { Api } from 'telegram';
+import { detectFileType, getAudioDuration, generateWaveform } from '../../lib/media-utils.js';
 import { withAuth } from '../../lib/with-auth.js';
 import type { GlobalOptions } from '../../lib/types.js';
 
@@ -95,6 +96,18 @@ export async function mediaSendAction(this: Command): Promise<void> {
 
       if (fileType === 'voice') {
         sendParams.voiceNote = true;
+        // Generate waveform so Telegram renders the voice equalizer
+        // (gramjs voiceNote alone sends a flat line).
+        const fullPath = resolve(files[0]);
+        const [duration, waveform] = await Promise.all([
+          getAudioDuration(fullPath),
+          generateWaveform(fullPath),
+        ]);
+        if (waveform.length > 0) {
+          sendParams.attributes = [
+            new Api.DocumentAttributeAudio({ voice: true, duration, waveform }),
+          ];
+        }
       } else if (fileType === 'document') {
         sendParams.forceDocument = true;
       }

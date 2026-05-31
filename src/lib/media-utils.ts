@@ -1,4 +1,8 @@
 import { Api } from 'telegram';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Map of user-facing filter names to factory functions that create
@@ -82,6 +86,86 @@ export function detectFileType(
   if (VIDEO_EXTS.has(lower)) return 'video';
   if (VOICE_EXTS.has(lower)) return 'voice';
   return 'document';
+}
+
+/**
+ * Get audio duration in seconds via ffprobe. Returns 0 on failure.
+ */
+export async function getAudioDuration(filePath: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'csv=p=0',
+      filePath,
+    ]);
+    return Math.round(parseFloat(stdout.toString().trim()) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Generate a Telegram voice waveform from an audio file.
+ *
+ * Decodes audio to mono 16kHz PCM via ffmpeg, splits into `points` bins,
+ * takes the peak amplitude per bin, normalizes to 5-bit (0-31), and packs
+ * the values LSB-first into bytes — the format Telegram clients expect for
+ * the `DocumentAttributeAudio.waveform` field (drives the voice equalizer).
+ *
+ * Returns an empty Buffer if ffmpeg is unavailable or the file has no audio.
+ */
+export async function generateWaveform(
+  filePath: string,
+  points = 100,
+): Promise<Buffer> {
+  let pcm: Buffer;
+  try {
+    const { stdout } = await execFileAsync(
+      'ffmpeg',
+      ['-i', filePath, '-ac', '1', '-ar', '16000', '-f', 's16le', '-'],
+      { encoding: 'buffer', maxBuffer: 1024 * 1024 * 256 },
+    );
+    pcm = stdout as unknown as Buffer;
+  } catch {
+    return Buffer.alloc(0);
+  }
+
+  const sampleCount = Math.floor(pcm.length / 2);
+  if (sampleCount === 0) return Buffer.alloc(0);
+
+  const binSize = Math.max(1, Math.floor(sampleCount / points));
+  const peaks: number[] = [];
+  for (let i = 0; i < points; i++) {
+    const start = i * binSize;
+    let peak = 0;
+    for (let j = 0; j < binSize; j++) {
+      const idx = (start + j) * 2;
+      if (idx + 1 >= pcm.length) break;
+      const sample = Math.abs(pcm.readInt16LE(idx));
+      if (sample > peak) peak = sample;
+    }
+    peaks.push(peak);
+  }
+
+  const maxPeak = Math.max(...peaks, 1);
+  const values = peaks.map(p => Math.min(31, Math.round((p / maxPeak) * 31)));
+
+  // Pack 5-bit values LSB-first into bytes
+  const out: number[] = [];
+  let bits = 0;
+  let bitcount = 0;
+  for (const v of values) {
+    bits |= (v & 0x1f) << bitcount;
+    bitcount += 5;
+    while (bitcount >= 8) {
+      out.push(bits & 0xff);
+      bits >>= 8;
+      bitcount -= 8;
+    }
+  }
+  if (bitcount > 0) out.push(bits & 0xff);
+  return Buffer.from(out);
 }
 
 /**
