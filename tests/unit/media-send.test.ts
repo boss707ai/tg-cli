@@ -108,6 +108,8 @@ vi.mock('../../src/lib/media-utils.js', () => ({
   detectFileType: (...args: any[]) => mockDetectFileType(...args),
   generateFilename: vi.fn(),
   formatBytes: vi.fn(),
+  getAudioDuration: vi.fn().mockResolvedValue(3),
+  generateWaveform: vi.fn().mockResolvedValue(Buffer.from([1, 2, 3])),
   FILTER_MAP: {},
   VALID_FILTERS: [],
 }));

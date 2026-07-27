@@ -2,15 +2,27 @@
 
 Agent-first Telegram CLI client built on MTProto. Designed for Claude Code agents and power users who need structured, scriptable access to Telegram.
 
+> This is a fork of [miolamio/tg-cli](https://github.com/miolamio/tg-cli) with additions on top of upstream:
+>
+> - `tg message click <chat> <msg-id>` — press inline bot buttons (`--text` / `--data` / `--row --col`); messages expose a `buttons` field (with `callback_data`/URLs) via `--fields ...,buttons`
+> - `tg chat similar [channel]` — Telegram's "similar channels" recommendations (omit the argument for personal ones)
+> - `tg chat folders` + `tg chat list --folder <id|title>` — Telegram dialog folders; `tg chat list --archived` — the system Archive
+> - `tg chat list` items carry `lastMessageDate` (unix) — signal of how alive a chat is
+> - `tg message send --html` — HTML parse mode for inline `<a href>` links
+> - Local read-access blocklist (privacy guard): chats listed in `$TG_BLOCKLIST` or `~/.config/tg-cli/blocked-chats.txt` are excluded from any read
+> - `tg media send --voice` generates a real waveform (ffmpeg), so voice notes render with an equalizer
+> - gramjs connection logs go to stderr — stdout stays pure JSON (`tg ... | jq` safe)
+> - Bare numeric chat IDs resolve reliably in fresh processes (entity-cache warm-up + retry)
+
 ## Install
 
+From this fork (builds from source via the `prepare` script):
+
 ```bash
-npm install -g @miolamio/tg-cli
-# or run directly
-npx @miolamio/tg-cli
+npm install -g github:boss707ai/tg-cli
 ```
 
-Requires Node.js >= 20.
+Requires Node.js >= 20. The upstream npm package (`npm install -g @miolamio/tg-cli`) does not include the additions listed above. Voice-note waveform generation additionally needs `ffmpeg`/`ffprobe` on PATH.
 
 ## Setup
 
@@ -51,7 +63,9 @@ tg session import <string> # Import session string
 ### Chats
 
 ```bash
-tg chat list [--limit N] [--type group|channel|user]
+tg chat list [--limit N] [--type group|channel|user] [--folder ID|TITLE] [--archived]
+tg chat folders                          # List Telegram dialog folders
+tg chat similar [channel]                # Similar-channel recommendations
 tg chat info <chat>
 tg chat join <username-or-invite-link>
 tg chat leave <chat>
@@ -73,7 +87,8 @@ tg message pinned <chat>
 tg message replies <channel> <msg-ids>
 
 # Write
-tg message send <chat> <text> [--reply-to ID] [--markdown]
+tg message send <chat> <text> [--reply-to ID] [--markdown] [--html]
+tg message click <chat> <msg-id> --text LABEL|--data CALLBACK|--row N --col N
 tg message edit <chat> <msg-id> <text>
 tg message delete <chat> <ids> --revoke|--for-me
 tg message forward <from-chat> <msg-ids> <to-chat>
@@ -153,8 +168,8 @@ echo "Hello from the CLI" | tg message send mychat -
 ## Development
 
 ```bash
-git clone <repo-url>
-cd telegram-cli
+git clone https://github.com/boss707ai/tg-cli.git
+cd tg-cli
 npm install
 npm run build
 npm test

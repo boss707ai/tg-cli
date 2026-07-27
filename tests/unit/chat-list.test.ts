@@ -109,7 +109,6 @@ describe('chatListAction', () => {
       createMockDialog({ id: BigInt(1), title: 'Group One', isGroup: true }),
       createMockDialog({ id: BigInt(2), title: 'Channel Two', isChannel: true, isGroup: false, entity: { username: 'chan2', megagroup: false } }),
     ];
-    (dialogs as any).total = 100;
     mockGetDialogs.mockResolvedValueOnce(dialogs);
 
     const ctx = createMockCommandContext();
@@ -119,7 +118,8 @@ describe('chatListAction', () => {
     expect(mockOutputSuccess).toHaveBeenCalledOnce();
     const data = mockOutputSuccess.mock.calls[0][0];
     expect(data.chats).toHaveLength(2);
-    expect(data.total).toBe(100);
+    // total counts the returned (post-filter) set, not the server-side dialog count
+    expect(data.total).toBe(2);
     expect(data.chats[0].title).toBe('Group One');
     expect(data.chats[0].type).toBe('group');
     expect(data.chats[1].title).toBe('Channel Two');
@@ -200,14 +200,13 @@ describe('chatListAction', () => {
     const dialogs = [
       createMockDialog({ id: BigInt(1), title: 'One' }),
     ];
-    (dialogs as any).total = 500;
     mockGetDialogs.mockResolvedValueOnce(dialogs);
 
     const ctx = createMockCommandContext({ limit: '1', offset: '0' });
     await chatListAction.call(ctx as any);
 
     const data = mockOutputSuccess.mock.calls[0][0];
-    expect(data.total).toBe(500);
+    expect(data.total).toBe(1);
   });
 
   it('detects supergroup type via megagroup flag', async () => {

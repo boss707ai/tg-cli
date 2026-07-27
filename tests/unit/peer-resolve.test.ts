@@ -62,6 +62,9 @@ describe('resolveEntity', () => {
     mockClient = {
       getEntity: vi.fn().mockResolvedValue({ id: 123, className: 'User' }),
       invoke: vi.fn().mockResolvedValue({ chat: { id: 456, className: 'Channel' } }),
+      // Numeric-ID fallback warms the entity cache by iterating dialogs; an
+      // empty iterator keeps the retry path deterministic in tests.
+      iterDialogs: vi.fn(async function* () {}),
     };
   });
 
