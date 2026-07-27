@@ -13,6 +13,7 @@ import { messagePinAction } from './pin.js';
 import { messageUnpinAction } from './unpin.js';
 import { messagePollAction } from './poll.js';
 import { messageWatchAction } from './watch.js';
+import { messageClickAction } from './click.js';
 
 /**
  * Create the `message` command group with history, search, get, pinned, send, forward, react, replies,
@@ -83,6 +84,7 @@ export function createMessageCommand(): Command {
     .option('--reply-to <msgId>', 'Reply to message ID')
     .option('--topic <topicId>', 'Forum topic ID')
     .option('--comment-to <postId>', 'Comment on a channel post')
+    .option('--html', 'Parse text as HTML (<b>, <i>, <a href>) instead of markdown')
     .action(messageSendAction);
 
   message
@@ -101,6 +103,17 @@ export function createMessageCommand(): Command {
     .description('React to a message with an emoji')
     .option('--remove', 'Remove reaction')
     .action(messageReactAction);
+
+  message
+    .command('click')
+    .argument('<chat>', 'Chat ID, username, or @username')
+    .argument('<msg-id>', 'Message ID carrying the inline keyboard')
+    .description('Press an inline keyboard button on a bot message')
+    .option('--text <label>', 'Button label (exact match, then substring)')
+    .option('--data <callback>', 'Button callback_data (exact match)')
+    .option('--row <n>', 'Button row (1-based, use with --col)')
+    .option('--col <n>', 'Button column (1-based, use with --row)')
+    .action(messageClickAction);
 
   message
     .command('replies')

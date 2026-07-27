@@ -28,7 +28,7 @@ async function readStdin(): Promise<string> {
  * Returns the sent message as a serialized MessageItem.
  */
 export async function messageSendAction(this: Command, chat: string, text: string): Promise<void> {
-  const opts = this.optsWithGlobals() as GlobalOptions & { replyTo?: string; topic?: string; commentTo?: string };
+  const opts = this.optsWithGlobals() as GlobalOptions & { replyTo?: string; topic?: string; commentTo?: string; html?: boolean };
 
   // Handle stdin pipe via dash placeholder
   if (text === '-') {
@@ -81,10 +81,12 @@ export async function messageSendAction(this: Command, chat: string, text: strin
     // --topic overrides --reply-to since topic scoping IS the replyTo in gramjs
     const effectiveReplyTo = topicId !== undefined ? topicId : replyTo;
 
-    // gramjs built-in MarkdownParser handles **bold**, __italic__, `code`, [links](url) automatically
+    // Default: gramjs MarkdownParser (**bold**, __italic__, `code`). NB: базовый markdown НЕ тянет инлайн-ссылки [text](url).
+    // --html: parseMode 'html' → поддержка <a href>, <b>, <i> (для чистых текст-ссылок «Подписаться на канал»).
     const sentMsg = await client.sendMessage(entity, {
       message: text,
       replyTo: effectiveReplyTo,
+      ...(opts.html ? { parseMode: 'html' } : {}),
       ...(commentTo !== undefined && { commentTo }),
     });
 

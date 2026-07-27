@@ -2,6 +2,7 @@ import { Api } from 'telegram';
 import type { Dialog } from 'telegram/tl/custom/dialog.js';
 import { entitiesToMarkdown } from './entity-to-markdown.js';
 import type {
+  ButtonItem,
   ChatListItem,
   MediaInfo,
   MessageItem,
@@ -52,6 +53,7 @@ export function serializeDialog(dialog: Dialog): ChatListItem {
     type: dialogType(dialog),
     username: entityUsername(dialog.entity),
     unreadCount: dialog.unreadCount,
+    lastMessageDate: dialog.date ?? undefined,
   };
 }
 
@@ -272,6 +274,45 @@ function forwardFromName(fwdFrom: any): string | null {
 }
 
 /**
+ * Extract inline/reply keyboard buttons from a message's replyMarkup.
+ *
+ * Returns rows of buttons (2D array). Callback buttons carry their callback_data
+ * (decoded as UTF-8) in `data`; URL/WebView buttons carry their link in `url`.
+ * Returns [] when the message has no keyboard.
+ */
+export function extractButtons(replyMarkup: any): ButtonItem[][] {
+  if (!replyMarkup || !Array.isArray(replyMarkup.rows)) return [];
+
+  const rows: ButtonItem[][] = [];
+  for (const row of replyMarkup.rows) {
+    const buttons: ButtonItem[] = [];
+    for (const b of row?.buttons ?? []) {
+      if (b instanceof Api.KeyboardButtonCallback) {
+        let data = '';
+        try {
+          data = Buffer.from(b.data).toString('utf8');
+        } catch {
+          data = '';
+        }
+        buttons.push({ text: b.text, type: 'callback', data });
+      } else if (b instanceof Api.KeyboardButtonUrl) {
+        buttons.push({ text: b.text, type: 'url', url: b.url });
+      } else if (b instanceof Api.KeyboardButtonWebView) {
+        buttons.push({ text: b.text, type: 'webview', url: b.url });
+      } else if (b instanceof Api.KeyboardButtonSwitchInline) {
+        buttons.push({ text: b.text, type: 'switch_inline' });
+      } else if (b instanceof Api.KeyboardButton) {
+        buttons.push({ text: b.text, type: 'text' });
+      } else {
+        buttons.push({ text: (b as any)?.text ?? '', type: 'other' });
+      }
+    }
+    rows.push(buttons);
+  }
+  return rows;
+}
+
+/**
  * Serialize a gramjs Api.Message to a MessageItem for JSON output.
  *
  * Handles: text messages, media messages (photo, video, voice, sticker, document),
@@ -336,6 +377,12 @@ export function serializeMessage(
   const pollData = extractPollData((msg as any).media);
   if (pollData) {
     item.poll = pollData;
+  }
+
+  // Populate inline/reply keyboard buttons when present
+  const buttons = extractButtons((msg as any).replyMarkup);
+  if (buttons.length > 0) {
+    item.buttons = buttons;
   }
 
   return item;

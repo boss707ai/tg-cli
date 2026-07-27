@@ -8,6 +8,7 @@ import { chatInviteInfoAction } from './invite-info.js';
 import { chatMembersAction } from './members.js';
 import { chatTopicsAction } from './topics.js';
 import { chatSearchAction } from './search.js';
+import { chatSimilarAction } from './similar.js';
 import { chatCreateAction } from './create.js';
 import { chatEditAction } from './edit.js';
 import { chatKickAction } from './kick.js';
@@ -35,7 +36,8 @@ export function createChatCommand(): Command {
     .description('List all chats/dialogs')
     .option('--type <type>', 'Filter by type: user, group, channel, supergroup')
     .option('--folder <id|title>', 'Only chats in this Telegram folder (dialog filter)')
-    .option('--limit <n>', 'Max results (default 50; whole folder when --folder is set)')
+    .option('--archived', 'Only chats in the system Archive folder (archived dialogs)')
+    .option('--limit <n>', 'Max results (default 50; whole set when --folder/--archived is set)')
     .option('--offset <n>', 'Skip results', '0')
     .action(chatListAction);
 
@@ -97,6 +99,12 @@ export function createChatCommand(): Command {
     .description('Search for public channels and groups globally')
     .option('--limit <n>', 'Max results', '20')
     .action(chatSearchAction);
+
+  chat
+    .command('similar')
+    .argument('[channel]', 'Channel ID, username, or @username (omit for personal recommendations)')
+    .description('List similar channels Telegram recommends for a channel')
+    .action(chatSimilarAction);
 
   chat
     .command('create')

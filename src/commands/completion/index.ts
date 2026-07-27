@@ -40,7 +40,7 @@ _tg_completions() {
     auth)    COMPREPLY=( $(compgen -W "login status logout" -- "$cur") ) ;;
     session) COMPREPLY=( $(compgen -W "export import" -- "$cur") ) ;;
     chat)    COMPREPLY=( $(compgen -W "list info join leave resolve invite-info members topics search create edit kick" -- "$cur") ) ;;
-    message) COMPREPLY=( $(compgen -W "history search get pinned send forward react replies edit delete pin unpin poll watch" -- "$cur") ) ;;
+    message) COMPREPLY=( $(compgen -W "history search get pinned send forward react click replies edit delete pin unpin poll watch" -- "$cur") ) ;;
     media)   COMPREPLY=( $(compgen -W "download send" -- "$cur") ) ;;
     user)    COMPREPLY=( $(compgen -W "profile block unblock blocked" -- "$cur") ) ;;
     contact) COMPREPLY=( $(compgen -W "list add delete search" -- "$cur") ) ;;

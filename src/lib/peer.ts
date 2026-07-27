@@ -138,12 +138,25 @@ export async function resolveEntity(
     const numId = Number(input);
     try {
       return guard((await client.getEntity(numId)) as Api.User | Api.Chat | Api.Channel);
-    } catch (err) {
-      if (err instanceof TgError) throw err;
-      throw new TgError(
-        `Peer not found: ${(err as Error).message}`,
-        'PEER_NOT_FOUND',
-      );
+    } catch {
+      // Bare numeric IDs are unresolvable without an access_hash in the
+      // session entity cache (fresh CLI process = empty cache). Warm the
+      // cache by iterating dialogs, then retry once.
+      try {
+        for await (const dialog of client.iterDialogs({ limit: 400 })) {
+          const e = dialog.entity as any;
+          if (e && Number(e.id) === numId) {
+            return guard(e as Api.User | Api.Chat | Api.Channel);
+          }
+        }
+        return guard((await client.getEntity(numId)) as Api.User | Api.Chat | Api.Channel);
+      } catch (err2) {
+        if (err2 instanceof TgError) throw err2;
+        throw new TgError(
+          `Peer not found: ${(err2 as Error).message}`,
+          'PEER_NOT_FOUND',
+        );
+      }
     }
   }
 

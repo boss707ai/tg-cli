@@ -1,5 +1,6 @@
 import { TelegramClient, sessions } from 'telegram';
 import { TgError } from './errors.js';
+import { stderrLogger } from './stderr-logger.js';
 
 const { StringSession } = sessions;
 
@@ -68,6 +69,7 @@ export async function withClient<T>(
     connectionRetries: 3,
     retryDelay: 1000,
     floodSleepThreshold: 60,
+    baseLogger: stderrLogger,
   });
 
   let timeoutId: ReturnType<typeof setTimeout>;
@@ -131,6 +133,7 @@ export async function createClientForAuth(
     connectionRetries: 3,
     retryDelay: 1000,
     floodSleepThreshold: 60,
+    baseLogger: stderrLogger,
   });
 
   return client;

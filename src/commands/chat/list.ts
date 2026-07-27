@@ -20,26 +20,33 @@ export async function chatListAction(this: Command): Promise<void> {
     limit?: string;
     offset: string;
   };
+  // Read separately so the boolean flag doesn't break the all-string opts shape
+  // that withAuth expects.
+  const archived = (opts as { archived?: boolean }).archived === true;
 
   const offset = parseInt(opts.offset, 10) || 0;
-  // A folder is a small, explicit set — it bounds itself — so without an explicit
-  // --limit we return the whole folder (no arbitrary cap to silently truncate it).
-  // The whole-account list isn't bounded (1000+ dialogs), so it keeps a 50 page.
-  // An explicit --limit always wins in either mode.
+  // A folder (or the system Archive) is a small, explicit set — it bounds itself —
+  // so without an explicit --limit we return the whole set (no arbitrary cap to
+  // silently truncate it). The whole-account list isn't bounded (1000+ dialogs),
+  // so it keeps a 50 page. An explicit --limit always wins in either mode.
+  const wholeSet = opts.folder != null || archived;
   const limit =
     opts.limit != null
       ? parseInt(opts.limit, 10) || 50
-      : opts.folder
+      : wholeSet
         ? Infinity
         : 50;
 
   await withAuth(opts, async (client) => {
-    // Folder mode fetches the full dialog list once, then keeps only members of
-    // the folder. Robust (one read, like the app does on startup). Members with
-    // no accessible dialog (e.g. a private channel we've left) can't appear.
-    const dialogs = opts.folder
-      ? await client.getDialogs({ limit: 100000 })
-      : await client.getDialogs({ limit: offset + limit });
+    // Folder/archive mode fetches the full dialog list once, then keeps only the
+    // relevant members. Robust (one read, like the app does on startup). Members
+    // with no accessible dialog (e.g. a private channel we've left) can't appear.
+    // `archived: true` reads folder 1 (the system Archive) instead of the main list.
+    const dialogParams: { limit: number; archived?: boolean } = {
+      limit: wholeSet ? 100000 : offset + limit,
+    };
+    if (archived) dialogParams.archived = true;
+    const dialogs = await client.getDialogs(dialogParams);
 
     let chats = dialogs.map(serializeDialog);
 

@@ -65,6 +65,8 @@ export interface ChatListItem {
   type: 'user' | 'group' | 'channel' | 'supergroup';
   username: string | null;
   unreadCount: number;
+  /** Unix timestamp (seconds) of the last message — signal of how alive the chat is. */
+  lastMessageDate?: number;
 }
 
 /**
@@ -119,12 +121,24 @@ export interface MessageItem {
   media?: MediaInfo;  // Only present when mediaType is not null
   editDate?: string;  // ISO string when message has been edited
   poll?: PollData;  // Present when message contains a poll
+  buttons?: ButtonItem[][];  // Inline/reply keyboard, rows of buttons. Present when message has a keyboard.
 }
 
 /** Reaction count for a message. */
 export interface ReactionCount {
   emoji: string;
   count: number;
+}
+
+/**
+ * A single keyboard button from a message's replyMarkup.
+ * `data` carries callback_data (for type 'callback'); `url` carries the link (for 'url'/'webview').
+ */
+export interface ButtonItem {
+  text: string;
+  type: 'callback' | 'url' | 'webview' | 'switch_inline' | 'text' | 'other';
+  data?: string;
+  url?: string;
 }
 
 /**
