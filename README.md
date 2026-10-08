@@ -53,17 +53,45 @@ One entry per line, `#` comments and blank lines are ignored:
 type:private
 ```
 
-Every peer goes through `resolveEntity`, which rejects a blocked chat with
-`CHAT_BLOCKED` both before the network lookup (raw input) and after it (resolved
-entity). `chat list` hides blocked chats on every path (`--type`, `--folder`,
-`--archived`, pagination), and global `message search` (also `--public` hashtag
-search) drops their messages and reduces `total` accordingly.
+Prefer numeric ids: a username can be changed or released, an id cannot.
+A `@username` entry also matches collectible (Fragment) usernames of a chat.
+
+**What it closes — blocked chats and their messages, in every command:**
+
+- Every peer goes through `resolveEntity`, which rejects a blocked chat with
+  `CHAT_BLOCKED` both before the network lookup (raw input) and after it
+  (resolved entity) — history, get, search in a chat, send, media, members,
+  `message watch`, and so on.
+- `chat list` hides blocked chats on every path (`--type`, `--folder`,
+  `--archived`, pagination).
+- Global `message search` and `--public` hashtag search drop messages of
+  blocked chats and reduce `total` accordingly.
+- `message search --chat a,b` skips a blocked chat silently: results for the
+  other chats, a warning on stderr only, no `partial`/`errors` entry and exit
+  status 0 (also when every listed chat is blocked — an empty result). A single
+  blocked `--chat` is `CHAT_BLOCKED`.
+- `message replies` drops comments that come from a blocked discussion group
+  of an open channel and reduces `total` by the number hidden.
+- `chat invite-info` and `chat join <invite link>` fail with `CHAT_BLOCKED` when
+  Telegram reveals that the invite leads to a blocked chat (`join` checks before
+  joining); `chat similar` and `chat search` drop blocked chats from the list.
+
+**People closed explicitly** — by numeric id or `@username` — also disappear
+from the contacts directory: `contact list`, `contact search` (local and
+`--global`) and `user blocked`; their full profile is not even requested.
+`type:private` closes only the private conversations, not the contacts
+directory (otherwise `contact list` would be empty).
+
+**Known limit:** `message search --public` may return the marked id of a
+blocked channel in its `nextOffsetPeer` cursor (only the id, no title or text) —
+the cursor is computed from the raw page so pagination neither repeats nor
+skips posts.
 
 The same rules apply to commands run through the daemon (`--daemon`, API
-`execute`, `message watch`): they use the same `resolveEntity` guard and search
-filter. The daemon reads the blocklist named by its own environment
-(`TG_BLOCKLIST`/`HOME` at `tg daemon start`) on first use and keeps it until it
-is restarted.
+`execute`, `message watch`): they run the same handlers with the same guard and
+filters. The daemon reads the blocklist named by its own environment
+(`TG_BLOCKLIST`/`HOME` at `tg daemon start`) on first use and keeps it: after
+editing the file, restart the daemon (`tg daemon stop && tg daemon start`).
 
 ## Setup
 

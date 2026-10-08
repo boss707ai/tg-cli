@@ -27,4 +27,20 @@ describe('fork packaging', () => {
     expect(readme).toContain('TG_BLOCKLIST');
     expect(readme).toContain('type:private');
   });
+
+  it('README states what the blocklist closes, its known limit and the daemon restart', () => {
+    const start = readme.indexOf('### Read-access blocklist');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const section = readme.slice(start, readme.indexOf('\n## ', start));
+    // chats and their messages everywhere, including the daemon
+    for (const item of ['CHAT_BLOCKED', 'chat list', 'message search --chat', 'message replies', 'chat invite-info', 'chat similar', '--daemon']) {
+      expect(section).toContain(item);
+    }
+    // explicitly closed people vanish from the contacts directory; type:private does not
+    for (const item of ['contact list', 'contact search', 'user blocked']) expect(section).toContain(item);
+    expect(section).toMatch(/`type:private` closes only the private conversations, not the contacts\s+directory/);
+    // known limit and the restart rule
+    expect(section).toContain('nextOffsetPeer');
+    expect(section).toContain('restart the daemon');
+  });
 });
