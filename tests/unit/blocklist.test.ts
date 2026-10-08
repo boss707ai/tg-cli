@@ -6,6 +6,9 @@ import { join } from 'node:path';
 // blocklist.ts reads $TG_BLOCKLIST once at import and caches it,
 // so every test writes its own file and re-imports the module.
 let dir: string;
+// Restore (not delete) TG_BLOCKLIST: the vitest config points it at an absent
+// file so no test ever falls back to the real ~/.config/tg-cli/blocked-chats.txt.
+const originalBlocklist = process.env.TG_BLOCKLIST;
 
 async function loadWith(lines: string[]) {
   writeFileSync(join(dir, 'blocked-chats.txt'), lines.join('\n'));
@@ -19,7 +22,8 @@ describe('blocklist: isBlockedPeer (global search results)', () => {
     dir = mkdtempSync(join(tmpdir(), 'tg-blocklist-'));
   });
   afterEach(() => {
-    delete process.env.TG_BLOCKLIST;
+    if (originalBlocklist === undefined) delete process.env.TG_BLOCKLIST;
+    else process.env.TG_BLOCKLIST = originalBlocklist;
     rmSync(dir, { recursive: true, force: true });
   });
 
