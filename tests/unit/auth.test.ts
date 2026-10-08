@@ -94,7 +94,8 @@ const mockStoreWithLock = vi.fn().mockImplementation(async (_profile: string, fn
 
 vi.mock('../../src/lib/session-store.js', () => ({
   SessionStore: vi.fn().mockImplementation(() => ({
-    save: mockStoreSave,
+    save: vi.fn(),
+    saveUnlocked: mockStoreSave,
     load: mockStoreLoad,
     delete: mockStoreDelete,
     deleteUnlocked: mockStoreDeleteUnlocked,
@@ -106,7 +107,7 @@ vi.mock('../../src/lib/session-store.js', () => ({
 // Mock client module
 vi.mock('../../src/lib/client.js', () => ({
   createClientForAuth: vi.fn(async () => mockClientInstance),
-  withClient: vi.fn(async (_opts: any, fn: any) => fn(mockClientInstance)),
+  withClient: vi.fn(async (_opts: any, fn: any) => fn(mockClientInstance, new AbortController().signal)),
 }));
 
 // Import after mocks
@@ -130,8 +131,61 @@ function createMockCommandContext(opts: Record<string, any> = {}) {
   };
 }
 
+describe('auth --daemon', () => {
+  it('status refuses --daemon instead of opening a second client', async () => {
+    const ctx = createMockCommandContext({ daemon: true });
+    await statusAction.call(ctx as any);
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.stringContaining('--daemon'),
+      'DAEMON_PROXY_UNAVAILABLE',
+    );
+    expect(mockStoreWithLock).not.toHaveBeenCalled();
+  });
+
+  it('login refuses --daemon', async () => {
+    const ctx = createMockCommandContext({ daemon: true });
+    await loginAction.call(ctx as any);
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.stringContaining('--daemon'),
+      'DAEMON_PROXY_UNAVAILABLE',
+    );
+  });
+
+  it('logout refuses --daemon', async () => {
+    const ctx = createMockCommandContext({ daemon: true });
+    await logoutAction.call(ctx as any);
+    expect(mockOutputError).toHaveBeenCalledWith(
+      expect.stringContaining('--daemon'),
+      'DAEMON_PROXY_UNAVAILABLE',
+    );
+  });
+});
+
 describe('loginAction', () => {
   const originalIsTTY = process.stdin.isTTY;
+
+  async function captureLoginBanner(opts: Record<string, unknown> = {}, tty = { stdout: true, stderr: true }) {
+    const stdoutTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+    const stderrTTY = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY');
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: tty.stdout });
+    Object.defineProperty(process.stderr, 'isTTY', { configurable: true, value: tty.stderr });
+    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    try {
+      await loginAction.call(createMockCommandContext(opts) as any);
+      return {
+        stdout: stdout.mock.calls.map(([chunk]) => String(chunk)).join(''),
+        stderr: stderr.mock.calls.map(([chunk]) => String(chunk)).join(''),
+      };
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+      if (stdoutTTY) Object.defineProperty(process.stdout, 'isTTY', stdoutTTY);
+      else Reflect.deleteProperty(process.stdout, 'isTTY');
+      if (stderrTTY) Object.defineProperty(process.stderr, 'isTTY', stderrTTY);
+      else Reflect.deleteProperty(process.stderr, 'isTTY');
+    }
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -143,6 +197,30 @@ describe('loginAction', () => {
 
   afterEach(() => {
     Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, writable: true, configurable: true });
+    vi.unstubAllEnvs();
+  });
+
+  it('writes the login mascot only to terminal stderr', async () => {
+    vi.stubEnv('TERM', 'xterm-256color');
+    vi.stubEnv('NO_COLOR', '1');
+    const captured = await captureLoginBanner();
+    expect(captured.stdout).toBe('');
+    expect(captured.stderr).toContain('.------.');
+    expect(captured.stderr).toContain('Telegram, from your terminal.');
+    expect(captured.stderr).not.toContain('\x1b[');
+    expect(mockOutputSuccess).toHaveBeenCalledWith(expect.objectContaining({ loggedIn: true }));
+  });
+
+  it.each([
+    { label: 'quiet', opts: { quiet: true }, tty: { stdout: true, stderr: true }, term: 'xterm-256color' },
+    { label: 'redirected stdout', opts: {}, tty: { stdout: false, stderr: true }, term: 'xterm-256color' },
+    { label: 'redirected stderr', opts: {}, tty: { stdout: true, stderr: false }, term: 'xterm-256color' },
+    { label: 'dumb terminal', opts: {}, tty: { stdout: true, stderr: true }, term: 'dumb' },
+  ])('omits the login mascot for $label', async ({ opts, tty, term }) => {
+    vi.stubEnv('TERM', term);
+    const captured = await captureLoginBanner(opts, tty);
+    expect(captured).toEqual({ stdout: '', stderr: '' });
+    expect(mockStart).toHaveBeenCalledOnce();
   });
 
   it('calls client.start() with phone, code, and password callbacks', async () => {
@@ -167,13 +245,98 @@ describe('loginAction', () => {
     expect(mockStoreSave).toHaveBeenCalledWith('default', 'saved-session-string');
   });
 
-  it('outputs success with truncated session and phone', async () => {
+  it('asks for the phone before fetching credentials or opening a connection', async () => {
+    await loginAction.call(createMockCommandContext() as any);
+    const { getCredentialsOrThrow } = await import('../../src/lib/config.js');
+    expect(mockAsk.mock.calls[0][0]).toBe('Phone number (international format): ');
+    expect(mockAsk.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(getCredentialsOrThrow).mock.invocationCallOrder[0]);
+    expect(mockAsk.mock.invocationCallOrder[0]).toBeLessThan(mockConnect.mock.invocationCallOrder[0]);
+    const params = mockStart.mock.calls[0][0];
+    expect(await params.phoneNumber()).toBe('+15551234567');
+    expect(mockAsk).toHaveBeenCalledOnce();
+  });
+
+  it('passes a normalized --phone literally to gramjs without asking for it', async () => {
+    await loginAction.call(createMockCommandContext({ phone: '+1 (555) 123-4567' }) as any);
+    expect(mockAsk).not.toHaveBeenCalled();
+    expect(mockStart.mock.calls[0][0].phoneNumber).toBe('+15551234567');
+    expect(mockConfigSet).toHaveBeenCalledWith('profiles.default', expect.objectContaining({ phone: '+15551234567' }));
+  });
+
+  it.each(['', '@username', '+012345678', '+123', '+1234567890123456'])('rejects invalid --phone %s before connecting', async phone => {
+    await loginAction.call(createMockCommandContext({ phone }) as any);
+    expect(mockConnect).not.toHaveBeenCalled();
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockStoreSave).not.toHaveBeenCalled();
+    expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Phone number must'), 'INVALID_INPUT');
+    expect(mockClose).toHaveBeenCalledOnce();
+  });
+
+  it('asks for a corrected phone when the interactive SDK flow retries it', async () => {
+    mockAsk.mockResolvedValueOnce('+15551234567').mockResolvedValueOnce('+15557654321');
+    mockStart.mockImplementationOnce(async params => {
+      expect(await params.phoneNumber()).toBe('+15551234567');
+      expect(await params.phoneNumber()).toBe('+15557654321');
+    });
+    await loginAction.call(createMockCommandContext() as any);
+    expect(mockConfigSet).toHaveBeenCalledWith('profiles.default', expect.objectContaining({ phone: '+15557654321' }));
+  });
+
+  it.each([false, true])('pauses SDK diagnostics during code/2FA input and restores them (reject=%s)', async reject => {
+    const { createGramjsLogger } = await import('../../src/lib/gramjs-logger.js');
+    const { setVerboseMode } = await import('../../src/lib/cli-mode.js');
+    const logger = createGramjsLogger();
+    (mockClientInstance as any).logger = logger;
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    setVerboseMode(true);
+    const answer = async () => {
+      logger.debug('hidden ping during input');
+      logger.error('hidden diagnostic during input');
+      if (reject) throw new Error('prompt cancelled');
+      return 'synthetic-code';
+    };
+    mockAsk.mockImplementationOnce(answer);
+    mockAskSecret.mockImplementationOnce(answer);
+    mockStart.mockImplementationOnce(async params => {
+      await params.phoneCode(true);
+      await params.password();
+    });
+    try {
+      await loginAction.call(createMockCommandContext({ phone: '+15551234567' }) as any);
+      logger.debug('diagnostics restored');
+      const output = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
+      expect(output).not.toContain('hidden ping');
+      expect(output).not.toContain('hidden diagnostic');
+      expect(output).toContain('diagnostics restored');
+    } finally {
+      delete (mockClientInstance as any).logger;
+      setVerboseMode(false);
+      stderr.mockRestore();
+      mockAsk.mockReset();
+      mockAskSecret.mockReset();
+    }
+  });
+
+  it('stops after exhausted connection retries without starting auth or saving a session', async () => {
+    mockConnect.mockResolvedValueOnce(false);
+    await loginAction.call(createMockCommandContext() as any);
+    expect(mockOutputError).toHaveBeenCalledWith(expect.any(String), 'CONNECTION_FAILED');
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockStoreSave).not.toHaveBeenCalled();
+    expect(mockConfigSet).not.toHaveBeenCalled();
+    expect(mockDestroy).toHaveBeenCalledOnce();
+    expect(mockClose).toHaveBeenCalledOnce();
+  });
+
+  it('outputs login metadata without disclosing the session string', async () => {
     const ctx = createMockCommandContext();
     await loginAction.call(ctx as any);
 
     expect(mockOutputSuccess).toHaveBeenCalledOnce();
     const data = mockOutputSuccess.mock.calls[0][0];
-    expect(data).toHaveProperty('session');
+    expect(data).toMatchObject({ loggedIn: true, profile: 'default' });
+    expect(data).not.toHaveProperty('session');
+    expect(JSON.stringify(data)).not.toContain('saved-session');
     expect(data).toHaveProperty('phone');
   });
 
@@ -253,6 +416,29 @@ describe('statusAction', () => {
     expect(mockOutputSuccess).toHaveBeenCalledOnce();
     const data = mockOutputSuccess.mock.calls[0][0];
     expect(data.authorized).toBe(true);
+  });
+
+  it('serializes gramjs user.id as a string, not a BigInteger object', async () => {
+    mockStoreLoad.mockResolvedValueOnce('existing-session');
+    mockCheckAuthorization.mockResolvedValueOnce(true);
+    // gramjs big-integer: JSON.stringify produces {} unless converted via toString()
+    const gramjsId = {
+      toString: () => '123456789012345',
+      toJSON: () => ({}),
+    };
+    mockGetMe.mockResolvedValueOnce({
+      id: gramjsId,
+      phone: '+15551234567',
+      username: 'testuser',
+      firstName: 'Test',
+    });
+    const ctx = createMockCommandContext();
+    await statusAction.call(ctx as any);
+
+    const data = mockOutputSuccess.mock.calls[0][0];
+    expect(data.authorized).toBe(true);
+    expect(data.user.id).toBe('123456789012345');
+    expect(JSON.parse(JSON.stringify(data.user)).id).toBe('123456789012345');
   });
 });
 

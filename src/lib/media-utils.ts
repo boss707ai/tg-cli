@@ -2,7 +2,13 @@ import { Api } from 'telegram';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-const execFileAsync = promisify(execFile);
+/**
+ * Promisified execFile, resolved lazily: importing this module (it is pulled in
+ * by every command, including the daemon entry) must not touch child_process.
+ */
+function execFileAsync(): typeof execFile.__promisify__ {
+  return promisify(execFile);
+}
 
 /**
  * Map of user-facing filter names to factory functions that create
@@ -93,7 +99,7 @@ export function detectFileType(
  */
 export async function getAudioDuration(filePath: string): Promise<number> {
   try {
-    const { stdout } = await execFileAsync('ffprobe', [
+    const { stdout } = await execFileAsync()('ffprobe', [
       '-v', 'error',
       '-show_entries', 'format=duration',
       '-of', 'csv=p=0',
@@ -121,7 +127,7 @@ export async function generateWaveform(
 ): Promise<Buffer> {
   let pcm: Buffer;
   try {
-    const { stdout } = await execFileAsync(
+    const { stdout } = await execFileAsync()(
       'ffmpeg',
       ['-i', filePath, '-ac', '1', '-ar', '16000', '-f', 's16le', '-'],
       { encoding: 'buffer', maxBuffer: 1024 * 1024 * 256 },

@@ -15,7 +15,7 @@ import { chatKickAction } from './kick.js';
 import { chatFoldersAction } from './folders.js';
 
 /**
- * Create the `chat` command group with 8 subcommands for chat discovery and management.
+ * Create the `chat` command group (12 subcommands).
  *
  * Usage:
  *   tg chat list             - List all chats/dialogs
@@ -26,6 +26,10 @@ import { chatFoldersAction } from './folders.js';
  *   tg chat invite-info <link> - Check invite link info without joining
  *   tg chat members <chat>   - List members of a group/channel
  *   tg chat topics <chat>    - List forum topics in a supergroup
+ *   tg chat search <query>   - Search public channels and groups
+ *   tg chat create <title>   - Create a group, supergroup, or channel
+ *   tg chat edit <chat>      - Edit chat title or description
+ *   tg chat kick <chat> <user> - Kick a user from a group or channel
  */
 export function createChatCommand(): Command {
   const chat = new Command('chat')
@@ -112,6 +116,7 @@ export function createChatCommand(): Command {
     .description('Create a new group, supergroup, or channel')
     .option('--type <type>', 'Chat type: group, supergroup, channel', 'supergroup')
     .option('--description <text>', 'Chat description')
+    .option('--members <users>', 'Comma-separated users (required for --type group)')
     .action(chatCreateAction);
 
   chat
