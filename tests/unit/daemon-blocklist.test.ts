@@ -131,6 +131,23 @@ describe('blocklist on the daemon execution path', () => {
     expect(client.getMessages).toHaveBeenCalledOnce();
   });
 
+  it('message replies drops comments from a blocked discussion group of an open channel', async () => {
+    const author = new Api.User({ id: bigInt(9), accessHash: bigInt(23), firstName: 'Commenter' });
+    const comment = (id: number, text: string, group: Api.Channel) => new Api.Message({
+      id, date: 1_700_000_000 + id, message: text,
+      peerId: new Api.PeerChannel({ channelId: group.id }), fromId: new Api.PeerUser({ userId: author.id }),
+    });
+    // `renamed` (-100556) plays the linked discussion group; the channel itself is open.
+    client.invoke.mockResolvedValueOnce({
+      className: 'messages.ChannelMessages',
+      messages: [comment(1, 'comment in blocked group', renamed), comment(2, 'another blocked comment', renamed)],
+      chats: [open, renamed], users: [author], count: 2,
+    });
+    const result = await run(['message', 'replies', '--', 'open_chan', '42']);
+    expect(result).toMatchObject({ output: { ok: true, data: { messages: [], total: 0, postId: 42 } }, exitCode: 0 });
+    expect(JSON.stringify(result.output)).not.toMatch(/blocked group|blocked comment/);
+  });
+
   it('chat list hides blocked dialogs', async () => {
     const dialog = (entity: Api.Channel | Api.User, id: string) => ({
       id: bigInt(id), title: (entity as any).title ?? 'Private Friend', entity,

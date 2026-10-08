@@ -4,6 +4,7 @@ import { outputSuccess, outputError } from '../../lib/output.js';
 import { resolveEntity } from '../../lib/peer.js';
 import { messagePeerMarkedId, serializeMessage } from '../../lib/serialize.js';
 import { buildEntityMap } from '../../lib/entity-map.js';
+import { isBlockedPeer } from '../../lib/blocklist.js';
 import { withAuth } from '../../lib/with-auth.js';
 import { parseMessageIds, validatePagination } from '../../lib/validate.js';
 import { formatError } from '../../lib/errors.js';
@@ -12,14 +13,24 @@ import type { BatchItemError, GlobalOptions, MessageItem } from '../../lib/types
 
 /**
  * Serialize messages from a GetReplies result, resolving sender names.
+ *
+ * Comments on a channel post live in the linked discussion group, so GetReplies
+ * returns messages from a chat that never went through resolveEntity. Messages
+ * whose chat is on the read-access blocklist are dropped here, and `total`
+ * (the server count) is lowered by the number hidden.
  */
-function serializeReplies(result: any): MessageItem[] {
+function serializeReplies(result: any): { messages: MessageItem[]; total: number } {
   const entityMap = buildEntityMap(result);
-  return result.messages.map((msg: any) => {
+  const visible = (result.messages ?? []).filter(
+    (msg: any) => !isBlockedPeer(msg.peerId, entityMap.get(messagePeerMarkedId(msg))),
+  );
+  const hidden = (result.messages ?? []).length - visible.length;
+  const messages = visible.map((msg: any) => {
     const senderId = messagePeerMarkedId({ peerId: msg.fromId });
     const senderEntity = entityMap.get(senderId);
     return serializeMessage(msg, senderEntity);
   });
+  return { messages, total: Math.max(0, (result.count ?? 0) - hidden) };
 }
 
 /**
@@ -65,9 +76,10 @@ export async function messageRepliesAction(
         }),
       );
 
+      const { messages, total } = serializeReplies(result);
       outputSuccess({
-        messages: serializeReplies(result),
-        total: (result as any).count ?? 0,
+        messages,
+        total,
         postId: msgIds[0],
       });
       return;
@@ -92,10 +104,11 @@ export async function messageRepliesAction(
           }),
         );
 
+        const { messages, total } = serializeReplies(result);
         posts.push({
           postId: msgId,
-          messages: serializeReplies(result),
-          total: (result as any).count ?? 0,
+          messages,
+          total,
         });
       } catch (err: unknown) {
         errors.push(batchError(String(msgId), err));
