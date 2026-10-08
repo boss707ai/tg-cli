@@ -4,6 +4,8 @@ import { outputSuccess, outputError } from '../../lib/output.js';
 import { resolveEntity } from '../../lib/peer.js';
 import { extractButtons, bigIntToString } from '../../lib/serialize.js';
 import { withAuth } from '../../lib/with-auth.js';
+import { parseMessageId } from '../../lib/validate.js';
+import { formatError } from '../../lib/errors.js';
 import type { GlobalOptions, ButtonItem } from '../../lib/types.js';
 
 /**
@@ -34,9 +36,13 @@ export async function messageClickAction(
     col?: string;
   };
 
-  const messageId = parseInt(msgIdInput, 10);
-  if (isNaN(messageId)) {
-    outputError('Invalid message ID: must be a number', 'INVALID_MESSAGE_ID');
+  // Upstream's strict parser: `42abc`, `0`, `-5`, `1e3` are rejected, not truncated.
+  let messageId: number;
+  try {
+    messageId = parseMessageId(msgIdInput);
+  } catch (err: unknown) {
+    const { message, code } = formatError(err);
+    outputError(message, code);
     return;
   }
 

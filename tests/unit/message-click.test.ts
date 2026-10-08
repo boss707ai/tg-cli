@@ -139,6 +139,18 @@ describe('message click', () => {
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
+  it.each(['42abc', '0', '-5', '4.2', '1e3', ''])('rejects msg-id %j with INVALID_MESSAGE_ID before connecting (upstream parseMessageId)', async (raw) => {
+    await messageClickAction.call(ctx({ text: 'Yes' }), '@bot', raw);
+    expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Invalid message ID'), 'INVALID_MESSAGE_ID');
+    expect(mockResolveEntity).not.toHaveBeenCalled();
+    expect(mockGetMessages).not.toHaveBeenCalled();
+  });
+
+  it('accepts a msg-id with surrounding whitespace like other message commands', async () => {
+    await messageClickAction.call(ctx({ text: 'Yes' }), '@bot', ' 42 ');
+    expect(mockGetMessages).toHaveBeenCalledWith(expect.anything(), { ids: [42] });
+  });
+
   it('requires a selector before connecting', async () => {
     await messageClickAction.call(ctx(), '@bot', '42');
     expect(mockOutputError).toHaveBeenCalledWith(expect.any(String), 'NO_BUTTON_SELECTOR');
