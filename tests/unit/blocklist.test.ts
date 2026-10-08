@@ -120,6 +120,23 @@ describe('blocklist: file formats and location', () => {
     expect(isExplicitlyBlockedEntity(undefined)).toBe(false);
   });
 
+  it('collectible usernames (entity.usernames[]) match @username entries in every matcher', async () => {
+    const { isBlockedEntity, isExplicitlyBlockedEntity, isBlockedPeer, isBlockedDialog } = await loadWith(['@fragment_name']);
+    // Fragment / collectible names: `username` may be empty, the names live in usernames[]
+    const channel = {
+      id: BigInt(42), className: 'Channel', username: null,
+      usernames: [{ username: 'other_alias', active: true }, { username: 'Fragment_Name', active: false }],
+    };
+    expect(isBlockedEntity(channel)).toBe(true);
+    expect(isExplicitlyBlockedEntity({ id: BigInt(7), className: 'User', usernames: [{ username: 'FRAGMENT_NAME' }] })).toBe(true);
+    expect(isBlockedPeer({ channelId: BigInt(42) }, channel)).toBe(true);
+    expect(isBlockedDialog({ id: '-10042', type: 'channel', username: null, usernames: channel.usernames })).toBe(true);
+    // unrelated collectible names stay visible
+    const open = { id: BigInt(43), className: 'Channel', usernames: [{ username: 'open_alias' }] };
+    expect(isBlockedEntity(open)).toBe(false);
+    expect(isBlockedDialog({ id: '-10043', type: 'channel', username: null, usernames: open.usernames })).toBe(false);
+  });
+
   it('type:user is an alias of type:private', async () => {
     const { isBlockedEntity } = await loadWith(['TYPE:USER']);
     expect(isBlockedEntity({ id: BigInt(2), className: 'User' })).toBe(true);

@@ -10,7 +10,7 @@ import { TgError } from './errors.js';
  * One entry per line; `#` comments and blank lines ignored.
  * Entry forms:
  *   123456789        — chat/user numeric id (marked -100.. and bare both match)
- *   @username        — username
+ *   @username        — username (also matches collectible usernames[])
  *   type:private     — block ALL private (1:1 user) chats at once
  *
  * Enforced at the peer-resolution chokepoint (peer.ts:resolveEntity) so EVERY
@@ -80,9 +80,25 @@ export function isBlockedInput(input: string): boolean {
 export function isExplicitlyBlockedEntity(entity: any): boolean {
   const bl = loadBlocklist();
   if (entity?.id != null && bl.ids.has(normalizeId(entity.id.toString()))) return true;
+  return hasBlockedUsername(bl, entity);
+}
+
+/**
+ * Does any public username of the entity match a @username entry? Checks the
+ * main `username` and the collectible (Fragment) ones in `usernames[]` — active
+ * or not — where `username` may be empty.
+ */
+function hasBlockedUsername(
+  bl: Blocklist,
+  entity: { username?: unknown; usernames?: unknown } | null | undefined,
+): boolean {
   const uname = entity?.username;
   if (uname && bl.usernames.has(String(uname).toLowerCase())) return true;
-  return false;
+  const extra = Array.isArray(entity?.usernames) ? entity.usernames : [];
+  return extra.some((u: any) => {
+    const name = typeof u === 'string' ? u : u?.username;
+    return !!name && bl.usernames.has(String(name).toLowerCase());
+  });
 }
 
 /** Match a resolved gramjs entity (User/Chat/Channel) against the blocklist. */
@@ -118,11 +134,19 @@ export function isBlockedPeer(peerId: any, chatEntity?: any): boolean {
   return false;
 }
 
-/** Match a serialized dialog ({ id, type, username }) for `chat list` filtering. */
-export function isBlockedDialog(c: { id?: string; type?: string; username?: string | null }): boolean {
+/**
+ * Match a serialized dialog ({ id, type, username }) for `chat list` filtering.
+ * `usernames` carries the entity's collectible usernames (not part of the output).
+ */
+export function isBlockedDialog(c: {
+  id?: string;
+  type?: string;
+  username?: string | null;
+  usernames?: ReadonlyArray<string | { username?: string }> | null;
+}): boolean {
   const bl = loadBlocklist();
   if (c.id != null && bl.ids.has(normalizeId(c.id))) return true;
-  if (c.username && bl.usernames.has(String(c.username).toLowerCase())) return true;
+  if (hasBlockedUsername(bl, c)) return true;
   if (bl.blockAllPrivate && c.type === 'user') return true;
   return false;
 }

@@ -9,6 +9,14 @@ import { isBlockedDialog, normalizeId } from '../../lib/blocklist.js';
 import { getFolders, findFolder } from '../../lib/folders.js';
 import type { ChatListItem, GlobalOptions } from '../../lib/types.js';
 
+/**
+ * Read-access blocklist check for a dialog: its serialized fields plus the
+ * entity's collectible usernames, which are not part of the list output.
+ */
+function isHiddenDialog(chat: ChatListItem, dialog: any): boolean {
+  return isBlockedDialog({ ...chat, usernames: dialog?.entity?.usernames });
+}
+
 const DIALOG_BATCH = 100;
 const MAX_DIALOGS = 5000;
 /** Folder/Archive mode reads the whole (self-bounded) set in one request. */
@@ -26,7 +34,7 @@ const WHOLE_SET_LIMIT = 100000;
  */
 async function fetchFilteredPage(
   client: TelegramClient,
-  keep: (chat: ChatListItem) => boolean,
+  keep: (chat: ChatListItem, dialog: any) => boolean,
   offset: number,
   limit: number,
   firstBatch: number = DIALOG_BATCH,
@@ -58,7 +66,7 @@ async function fetchFilteredPage(
       seen.add(key);
       last = dialog;
       const chat = serializeDialog(dialog);
-      if (keep(chat)) matching.push(chat);
+      if (keep(chat, dialog)) matching.push(chat);
     }
     if (batch.length < requested) {
       exhausted = true;
@@ -124,7 +132,10 @@ export async function chatListAction(this: Command): Promise<void> {
       const dialogs = await client.getDialogs(dialogParams);
 
       // Hide chats on the local read-access blocklist (privacy guard)
-      let chats = dialogs.map(serializeDialog).filter((c) => !isBlockedDialog(c));
+      let chats = dialogs
+        .map((dialog) => ({ chat: serializeDialog(dialog), dialog }))
+        .filter(({ chat, dialog }) => !isHiddenDialog(chat, dialog))
+        .map(({ chat }) => chat);
 
       // Filter by Telegram folder (dialog filter) if requested
       if (opts.folder) {
@@ -148,7 +159,7 @@ export async function chatListAction(this: Command): Promise<void> {
     if (opts.type) {
       const { chats, total, hasMore } = await fetchFilteredPage(
         client,
-        (c) => c.type === opts.type && !isBlockedDialog(c),
+        (c, dialog) => c.type === opts.type && !isHiddenDialog(c, dialog),
         offset,
         limit,
       );
@@ -162,7 +173,7 @@ export async function chatListAction(this: Command): Promise<void> {
     // hidden); hasMore tells whether a next page may exist, like with --type.
     const { chats, total, hasMore } = await fetchFilteredPage(
       client,
-      (c) => !isBlockedDialog(c),
+      (c, dialog) => !isHiddenDialog(c, dialog),
       offset,
       limit,
       offset + limit,

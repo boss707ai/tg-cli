@@ -14,6 +14,11 @@ const open = new Api.Channel({ id: bigInt(1234567890), accessHash: bigInt(10), t
 const secret = new Api.Channel({ id: bigInt(555), accessHash: bigInt(11), title: 'Secret channel', username: 'secret_chan', photo, date: 1_700_000_000, broadcast: true });
 const renamed = new Api.Channel({ id: bigInt(556), accessHash: bigInt(12), title: 'Renamed secret', username: 'new_name', photo, date: 1_700_000_000, broadcast: true });
 const friend = new Api.User({ id: bigInt(8), accessHash: bigInt(22), firstName: 'Private', lastName: 'Friend' });
+// Collectible (Fragment) usernames: no `username`, the names live in usernames[].
+const fragment = new Api.Channel({
+  id: bigInt(560), accessHash: bigInt(13), title: 'Fragment secret', photo, date: 1_700_000_000, broadcast: true,
+  usernames: [new Api.Username({ username: 'fragment_alias', active: true }), new Api.Username({ username: 'Fragment_Name', active: true })],
+});
 
 function hit(id: number, text: string, chat: Api.Channel | Api.User): Api.Message {
   const message = new Api.Message({
@@ -30,7 +35,7 @@ let executeDaemonCommand: typeof import('../../src/lib/daemon/execute.js').execu
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'tg-daemon-blocklist-'));
-  writeFileSync(join(dir, 'blocked-chats.txt'), ['# synthetic', '@secret_chan', '-100556', '8'].join('\n'));
+  writeFileSync(join(dir, 'blocked-chats.txt'), ['# synthetic', '@secret_chan', '-100556', '8', '@fragment_name'].join('\n'));
   process.env.TG_BLOCKLIST = join(dir, 'blocked-chats.txt');
   vi.resetModules(); // blocklist.ts reads and caches its file once per process
   ({ executeDaemonCommand } = await import('../../src/lib/daemon/execute.js'));
@@ -50,7 +55,7 @@ describe('blocklist on the daemon execution path', () => {
     previousExitCode = process.exitCode;
     client = {
       getEntity: vi.fn(async (input: string | number) => {
-        const peers: Record<string, any> = { open_chan: open, secret_chan: secret, new_name: renamed, '-1001234567890': open, '-100555': secret };
+        const peers: Record<string, any> = { open_chan: open, secret_chan: secret, new_name: renamed, fragment_alias: fragment, '-1001234567890': open, '-100555': secret };
         const entity = peers[String(input)];
         if (entity) return entity;
         throw Object.assign(new Error('USERNAME_NOT_OCCUPIED'), { errorMessage: 'USERNAME_NOT_OCCUPIED' });
@@ -104,6 +109,13 @@ describe('blocklist on the daemon execution path', () => {
     const result = await run(['message', 'history', '--', '@new_name']);
     expect(result).toMatchObject({ output: { ok: false, code: 'CHAT_BLOCKED' }, exitCode: 1 });
     expect(client.getEntity).toHaveBeenCalledWith('new_name');
+    expect(client.getMessages).not.toHaveBeenCalled();
+  });
+
+  it('rejects a chat whose collectible usernames include a blocked @username (checked after resolve)', async () => {
+    const result = await run(['message', 'history', '--', '@fragment_alias']);
+    expect(result).toMatchObject({ output: { ok: false, code: 'CHAT_BLOCKED' }, exitCode: 1 });
+    expect(client.getEntity).toHaveBeenCalledWith('fragment_alias');
     expect(client.getMessages).not.toHaveBeenCalled();
   });
 
@@ -171,7 +183,7 @@ describe('blocklist on the daemon execution path', () => {
       id: bigInt(id), title: (entity as any).title ?? 'Private Friend', entity,
       isChannel: entity instanceof Api.Channel, isUser: entity instanceof Api.User, isGroup: false, unreadCount: 0,
     });
-    client.getDialogs.mockResolvedValueOnce([dialog(open, '-1001234567890'), dialog(secret, '-100555'), dialog(friend, '8'), dialog(renamed, '-100556')]);
+    client.getDialogs.mockResolvedValueOnce([dialog(open, '-1001234567890'), dialog(secret, '-100555'), dialog(friend, '8'), dialog(renamed, '-100556'), dialog(fragment, '-100560')]);
     const result = await run(['chat', 'list']);
     expect((result.output as any).data).toMatchObject({ chats: [{ title: 'Open channel' }], total: 1 });
   });
