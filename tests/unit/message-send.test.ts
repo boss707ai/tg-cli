@@ -326,3 +326,30 @@ describe('messageSendAction', () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });
+
+describe('messageSendAction: fork additions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSendMessage.mockResolvedValue(createMockMessage({ id: 100, message: 'Test message' }));
+  });
+
+  it('--html sends with parseMode html (inline <a href> links)', async () => {
+    const ctx = createMockCommandContext({ html: true });
+    await messageSendAction.call(ctx as any, 'testchat', '<a href="https://t.me/x">Subscribe</a>');
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ message: '<a href="https://t.me/x">Subscribe</a>', parseMode: 'html' }),
+    );
+  });
+
+  it('without --html leaves the default (markdown) parse mode untouched', async () => {
+    await messageSendAction.call(createMockCommandContext() as any, 'testchat', '**bold**');
+    expect(mockSendMessage.mock.calls[0][1]).not.toHaveProperty('parseMode');
+  });
+
+  it('serializes the sent message with its sender entity (senderName)', async () => {
+    mockSendMessage.mockResolvedValueOnce(createMockMessage({ id: 101, _sender: { firstName: 'Me', lastName: 'Myself' } }));
+    await messageSendAction.call(createMockCommandContext() as any, 'testchat', 'Hi');
+    expect(mockOutputSuccess.mock.calls[0][0].senderName).toBe('Me Myself');
+  });
+});

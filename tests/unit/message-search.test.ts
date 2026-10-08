@@ -156,6 +156,7 @@ function createMockMessage(overrides: Record<string, any> = {}) {
 
 // Import after mocks
 import { messageSearchAction } from '../../src/commands/message/search.js';
+import { TgError } from '../../src/lib/errors.js';
 
 // Create a mock Command context
 function createMockCommandContext(opts: Record<string, any> = {}) {
@@ -657,5 +658,86 @@ describe('messageSearchAction', () => {
       }),
     );
     expect(mockOutputSuccess).toHaveBeenCalledOnce();
+  });
+});
+
+describe('messageSearchAction: fork additions (senderName, blocklist)', () => {
+  const originalExitCode = process.exitCode;
+  afterEach(() => { process.exitCode = originalExitCode; });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsBlockedPeer.mockReturnValue(false);
+  });
+
+  it('single-chat search fills senderName from msg._sender', async () => {
+    const messages = [createMockMessage({ id: 1, _sender: { firstName: 'Alice', lastName: 'Smith' } })];
+    (messages as any).total = 1;
+    mockGetMessages.mockResolvedValueOnce(messages);
+    await messageSearchAction.call(createMockCommandContext({ chat: 'mychat', query: 'x' }) as any);
+    expect(mockOutputSuccess.mock.calls[0][0].messages[0].senderName).toBe('Alice Smith');
+  });
+
+  it('single-chat --topic search fills senderName from the response entities', async () => {
+    mockClientInstance.invoke.mockResolvedValueOnce({
+      messages: [{ id: 5, date: 1710150900, message: 'in topic', fromId: { userId: BigInt(7) }, peerId: { channelId: BigInt(123) } }],
+      users: [{ id: BigInt(7), className: 'User', firstName: 'Topic', lastName: 'Author' }],
+      chats: [],
+      count: 1,
+    });
+    await messageSearchAction.call(createMockCommandContext({ chat: 'mychat', query: 'x', topic: '42' }) as any);
+    expect(mockOutputSuccess.mock.calls[0][0].messages[0].senderName).toBe('Topic Author');
+  });
+
+  it('multi-chat search fills senderName from msg._sender', async () => {
+    mockResolveEntity
+      .mockResolvedValueOnce({ id: BigInt(100), className: 'Channel' })
+      .mockResolvedValueOnce({ id: BigInt(200), className: 'Channel' });
+    mockGetMessages
+      .mockResolvedValueOnce([createMockMessage({ id: 1, _sender: { firstName: 'Bob' } })])
+      .mockResolvedValueOnce([createMockMessage({ id: 2, peerId: { channelId: BigInt(200) }, _sender: { firstName: 'Eve' } })]);
+    await messageSearchAction.call(createMockCommandContext({ chat: '@a,@b', query: 'x' }) as any);
+    const names = mockOutputSuccess.mock.calls[0][0].messages.map((m: any) => m.senderName).sort();
+    expect(names).toEqual(['Bob', 'Eve']);
+  });
+
+  it('global search fills senderName from msg._sender', async () => {
+    const messages = [createMockMessage({ id: 3, _sender: { firstName: 'Carol' } })];
+    (messages as any).total = 1;
+    mockGetMessages.mockResolvedValueOnce(messages);
+    await messageSearchAction.call(createMockCommandContext({ query: 'x' }) as any);
+    expect(mockOutputSuccess.mock.calls[0][0].messages[0].senderName).toBe('Carol');
+  });
+
+  it('multi-chat search skips a blocked chat (no request to it) and reports it as CHAT_BLOCKED', async () => {
+    mockResolveEntity
+      .mockResolvedValueOnce({ id: BigInt(100), className: 'Channel' })
+      .mockRejectedValueOnce(new TgError('Chat is blocked by local read-access policy (blocked-chats.txt)', 'CHAT_BLOCKED'));
+    mockGetMessages.mockResolvedValueOnce([createMockMessage({ id: 1, message: 'open result' })]);
+    await messageSearchAction.call(createMockCommandContext({ chat: '@open,@secret', query: 'x' }) as any);
+
+    expect(mockGetMessages).toHaveBeenCalledOnce();
+    const data = mockOutputSuccess.mock.calls[0][0];
+    expect(data.messages.map((m: any) => m.text)).toEqual(['open result']);
+    expect(data.partial).toBe(true);
+    expect(data.errors).toEqual([expect.objectContaining({ input: '@secret', code: 'CHAT_BLOCKED' })]);
+  });
+
+  it('global search hides blocked messages, keeps offset in raw results and lowers total', async () => {
+    const messages = [
+      createMockMessage({ id: 1, message: 'skipped by offset' }),
+      createMockMessage({ id: 2, message: 'secret', peerId: { channelId: null, chatId: null, userId: BigInt(9) }, chat: { firstName: 'Private' } }),
+      createMockMessage({ id: 3, message: 'visible' }),
+    ];
+    (messages as any).total = 10;
+    mockGetMessages.mockResolvedValueOnce(messages);
+    mockIsBlockedPeer.mockImplementation((peerId: any) => peerId?.userId != null);
+
+    await messageSearchAction.call(createMockCommandContext({ query: 'x', limit: '2', offset: '1' }) as any);
+
+    expect(mockGetMessages).toHaveBeenCalledWith(undefined, expect.objectContaining({ limit: 3 }));
+    const data = mockOutputSuccess.mock.calls[0][0];
+    expect(data.messages.map((m: any) => m.text)).toEqual(['visible']);
+    expect(data.total).toBe(9);
+    expect(JSON.stringify(data)).not.toContain('secret');
   });
 });
