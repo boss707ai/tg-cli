@@ -111,6 +111,15 @@ describe('blocklist: file formats and location', () => {
     expect(isBlockedEntity({ id: BigInt(4), className: 'Chat' })).toBe(false);
   });
 
+  it('isExplicitlyBlockedEntity: id and username entries only, type:private ignored', async () => {
+    const { isExplicitlyBlockedEntity } = await loadWith(['555', '@named', 'type:private']);
+    expect(isExplicitlyBlockedEntity({ id: BigInt(555), className: 'User' })).toBe(true);
+    expect(isExplicitlyBlockedEntity({ id: '555' })).toBe(true);
+    expect(isExplicitlyBlockedEntity({ id: BigInt(1), username: 'NAMED', className: 'User' })).toBe(true);
+    expect(isExplicitlyBlockedEntity({ id: BigInt(2), className: 'User' })).toBe(false);
+    expect(isExplicitlyBlockedEntity(undefined)).toBe(false);
+  });
+
   it('type:user is an alias of type:private', async () => {
     const { isBlockedEntity } = await loadWith(['TYPE:USER']);
     expect(isBlockedEntity({ id: BigInt(2), className: 'User' })).toBe(true);

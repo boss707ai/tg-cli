@@ -8,6 +8,7 @@ import { validatePagination } from '../../lib/validate.js';
 import { formatError, TgError } from '../../lib/errors.js';
 import { batchError, outputBatchResult } from '../../lib/batch-results.js';
 import { ErrorCode } from '../../lib/error-codes.js';
+import { isExplicitlyBlockedEntity } from '../../lib/blocklist.js';
 import type { BatchItemError, GlobalOptions, UserProfile } from '../../lib/types.js';
 
 /**
@@ -19,6 +20,10 @@ import type { BatchItemError, GlobalOptions, UserProfile } from '../../lib/types
  *
  * Returns ContactListResult { contacts: UserProfile[], total: number }
  * where total is the full count before pagination.
+ *
+ * People closed explicitly in the read-access blocklist (id / @username) are
+ * dropped before pagination and before GetFullUser; `type:private` does not
+ * apply to the contacts directory.
  */
 export async function contactListAction(this: Command): Promise<void> {
   const opts = this.optsWithGlobals() as GlobalOptions & { limit?: string; offset?: string };
@@ -50,10 +55,12 @@ export async function contactListAction(this: Command): Promise<void> {
       userMap.set(bigIntToString(user.id), user);
     }
 
-    // Get contact user IDs from result.contacts
+    // Get contact user IDs from result.contacts, hiding explicitly blocked people
     const contactUserIds: string[] = [];
     for (const contact of (result as any).contacts ?? []) {
-      contactUserIds.push(bigIntToString(contact.userId));
+      const userId = bigIntToString(contact.userId);
+      if (isExplicitlyBlockedEntity(userMap.get(userId) ?? { id: userId })) continue;
+      contactUserIds.push(userId);
     }
 
     // Sort alphabetically by firstName + lastName

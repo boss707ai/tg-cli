@@ -15,6 +15,8 @@ import { join } from 'node:path';
  * Enforced at the peer-resolution chokepoint (peer.ts:resolveEntity) so EVERY
  * command that targets a chat is covered, plus filtered out of `chat list` and
  * out of global `message search` results (isBlockedPeer — no chat is resolved there).
+ * People closed explicitly (id / @username, not `type:private`) are also hidden
+ * from the contacts directory (isExplicitlyBlockedEntity).
  */
 
 const BLOCKLIST_PATH =
@@ -67,12 +69,25 @@ export function isBlockedInput(input: string): boolean {
   return bl.usernames.has(u);
 }
 
-/** Match a resolved gramjs entity (User/Chat/Channel) against the blocklist. */
-export function isBlockedEntity(entity: any): boolean {
+/**
+ * Match an entity against EXPLICIT entries only (numeric id or @username),
+ * ignoring `type:private`. Used for the contacts directory (`contact list`,
+ * `contact search`, `user blocked`): a person closed by name or id disappears
+ * from it, while `type:private` closes only the conversations — applying it
+ * there would empty the contact list.
+ */
+export function isExplicitlyBlockedEntity(entity: any): boolean {
   const bl = loadBlocklist();
   if (entity?.id != null && bl.ids.has(normalizeId(entity.id.toString()))) return true;
   const uname = entity?.username;
   if (uname && bl.usernames.has(String(uname).toLowerCase())) return true;
+  return false;
+}
+
+/** Match a resolved gramjs entity (User/Chat/Channel) against the blocklist. */
+export function isBlockedEntity(entity: any): boolean {
+  const bl = loadBlocklist();
+  if (isExplicitlyBlockedEntity(entity)) return true;
   if (bl.blockAllPrivate && entity?.className === 'User') return true;
   return false;
 }

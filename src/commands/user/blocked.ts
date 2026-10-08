@@ -5,6 +5,7 @@ import { translateTelegramError, formatError } from '../../lib/errors.js';
 import { validatePagination } from '../../lib/validate.js';
 import { bigIntToString } from '../../lib/serialize.js';
 import { withAuth } from '../../lib/with-auth.js';
+import { isExplicitlyBlockedEntity } from '../../lib/blocklist.js';
 import type { GlobalOptions, BlockedListItem, BlockedListResult } from '../../lib/types.js';
 
 /**
@@ -15,6 +16,10 @@ import type { GlobalOptions, BlockedListItem, BlockedListResult } from '../../li
  * contacts.BlockedSlice (paginated, has .count) response types.
  *
  * Returns BlockedListResult { users: BlockedListItem[], total: number }.
+ *
+ * People closed explicitly in the read-access blocklist (id / @username) are
+ * dropped and `total` is lowered by the number hidden; `type:private` does not
+ * apply here.
  */
 export async function userBlockedAction(this: Command): Promise<void> {
   const opts = this.optsWithGlobals() as GlobalOptions & { limit?: string; offset?: string };
@@ -41,7 +46,7 @@ export async function userBlockedAction(this: Command): Promise<void> {
       return;
     }
 
-    const total: number = (result as any).count ?? (result as any).blocked?.length ?? 0;
+    const serverTotal: number = (result as any).count ?? (result as any).blocked?.length ?? 0;
 
     // Build userMap from result.users keyed by stringified user ID
     const userMap = new Map<string, any>();
@@ -51,9 +56,14 @@ export async function userBlockedAction(this: Command): Promise<void> {
 
     // Map blocked entries to BlockedListItem
     const users: BlockedListItem[] = [];
+    let hidden = 0;
     for (const entry of (result as any).blocked ?? []) {
       const userId = bigIntToString(entry.peerId.userId);
       const user = userMap.get(userId);
+      if (isExplicitlyBlockedEntity(user ?? { id: userId })) {
+        hidden++;
+        continue;
+      }
       users.push({
         id: userId,
         firstName: user?.firstName ?? null,
@@ -63,7 +73,7 @@ export async function userBlockedAction(this: Command): Promise<void> {
       });
     }
 
-    const output: BlockedListResult = { users, total };
+    const output: BlockedListResult = { users, total: Math.max(0, serverTotal - hidden) };
     outputSuccess(output);
   });
 }

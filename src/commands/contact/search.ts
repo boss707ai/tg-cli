@@ -6,6 +6,7 @@ import { bigIntToString } from '../../lib/serialize.js';
 import { validatePagination } from '../../lib/validate.js';
 import { formatError, TgError } from '../../lib/errors.js';
 import { ErrorCode } from '../../lib/error-codes.js';
+import { isExplicitlyBlockedEntity } from '../../lib/blocklist.js';
 import { buildUserProfile } from '../../lib/user-profile.js';
 import { withAuth } from '../../lib/with-auth.js';
 import { batchError, outputBatchResult } from '../../lib/batch-results.js';
@@ -23,6 +24,10 @@ function normalizeSearchText(value: string): string {
  *
  * Returns ContactSearchResult { results: ContactSearchItem[], total: number }
  * Contact membership comes from the address book, not contacts.Search.myResults.
+ *
+ * People closed explicitly in the read-access blocklist (id / @username) never
+ * become candidates, so they neither fill the page nor reach GetFullUser;
+ * `type:private` does not apply to the contacts directory.
  */
 export async function contactSearchAction(this: Command, query: string): Promise<void> {
   const opts = this.optsWithGlobals() as GlobalOptions & { global?: boolean; limit?: string };
@@ -50,10 +55,10 @@ export async function contactSearchAction(this: Command, query: string): Promise
     const peerUserIds: string[] = [];
     const seenIds = new Set<string>();
     const addCandidate = (id: string) => {
-      if (!seenIds.has(id)) {
-        peerUserIds.push(id);
-        seenIds.add(id);
-      }
+      if (seenIds.has(id)) return;
+      seenIds.add(id);
+      if (isExplicitlyBlockedEntity(userMap.get(id) ?? { id })) return;
+      peerUserIds.push(id);
     };
 
     // contacts.Search excludes the address book. Fetch it without a cache hash
