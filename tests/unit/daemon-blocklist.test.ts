@@ -121,14 +121,32 @@ describe('blocklist on the daemon execution path', () => {
     expect(JSON.stringify(result.output)).not.toMatch(/secret|friend|renamed/i);
   });
 
-  it('multi-chat search skips a blocked chat and reports CHAT_BLOCKED for it', async () => {
+  // Owner decision: a blocked chat in a multi-chat search is skipped silently
+  // (warning on stderr only) — no partial/errors entry, no exit 1.
+  it('multi-chat search silently skips a blocked chat', async () => {
     const result = await run(['message', 'search', '--query=open', '--chat=open_chan,secret_chan']);
-    expect(result.exitCode).toBe(1);
-    expect(result.output).toMatchObject({
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toEqual({
       ok: true,
-      data: { messages: [{ text: 'open history' }], partial: true, errors: [{ input: 'secret_chan', code: 'CHAT_BLOCKED' }] },
+      data: { messages: [expect.objectContaining({ text: 'open history' })], total: 1, partial: false, errors: [] },
     });
+    expect(JSON.stringify(result.output)).not.toMatch(/secret|CHAT_BLOCKED/);
     expect(client.getMessages).toHaveBeenCalledOnce();
+  });
+
+  it('multi-chat search over only blocked chats is an empty success', async () => {
+    const result = await run(['message', 'search', '--query=open', '--chat=secret_chan,-100556']);
+    expect(result).toEqual({ output: { ok: true, data: { messages: [], total: 0, partial: false, errors: [] } }, exitCode: 0 });
+    expect(client.getMessages).not.toHaveBeenCalled();
+  });
+
+  it('multi-chat search keeps upstream partial semantics for other failures', async () => {
+    const result = await run(['message', 'search', '--query=open', '--chat=open_chan,secret_chan,missing_chan']);
+    expect(result.exitCode).toBe(1);
+    const data = (result.output as any).data;
+    expect(data).toMatchObject({ messages: [{ text: 'open history' }], partial: true });
+    expect(data.errors).toEqual([expect.objectContaining({ input: 'missing_chan' })]);
+    expect(data.errors[0].code).not.toBe('CHAT_BLOCKED');
   });
 
   it('message replies drops comments from a blocked discussion group of an open channel', async () => {

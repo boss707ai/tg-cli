@@ -16,7 +16,7 @@ import { FILTER_MAP, VALID_FILTERS } from '../../lib/media-utils.js';
 import { withAuth } from '../../lib/with-auth.js';
 import { ErrorCode } from '../../lib/error-codes.js';
 import { validatePagination, parseTopicId, parseMessageId } from '../../lib/validate.js';
-import { formatError } from '../../lib/errors.js';
+import { formatError, TgError } from '../../lib/errors.js';
 import { buildEntityMap } from '../../lib/entity-map.js';
 import { batchError, outputBatchResult } from '../../lib/batch-results.js';
 import type { BatchItemError, GlobalOptions, PublicPostSearchResult, SearchResultItem } from '../../lib/types.js';
@@ -32,7 +32,8 @@ import type { BatchItemError, GlobalOptions, PublicPostSearchResult, SearchResul
  * Single-chat search (--chat with one value): resolves entity, passes search param to getMessages.
  * Multi-chat search (--chat with comma-separated values): resolves each, searches sequentially, merges results.
  * Global search (no --chat): iterates cross-chat search and skips --offset results;
- * results include marked chatId/chatTitle. Multi-chat failures include partial/errors.
+ * results include marked chatId/chatTitle. Multi-chat failures include partial/errors,
+ * except chats on the read-access blocklist: those are skipped with a stderr warning.
  */
 export async function messageSearchAction(this: Command): Promise<void> {
   const opts = this.optsWithGlobals() as GlobalOptions & {
@@ -235,6 +236,12 @@ export async function messageSearchAction(this: Command): Promise<void> {
               allResults.push(serializeSearchResult(msg as any, msgChatId, chatTitle, (msg as any)._sender));
             }
           } catch (err) {
+            // A chat on the local read-access blocklist is skipped silently: a
+            // stderr warning only, no partial/errors entry and no exit 1.
+            if (err instanceof TgError && err.code === 'CHAT_BLOCKED') {
+              logStatus(`Warning: skipped ${chatId}: blocked by local read-access policy`, quiet);
+              continue;
+            }
             const error = batchError(chatId, err);
             errors.push(error);
             logStatus(`Warning: failed to search ${chatId}: ${error.error}`, quiet);

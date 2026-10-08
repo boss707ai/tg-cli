@@ -708,18 +708,25 @@ describe('messageSearchAction: fork additions (senderName, blocklist)', () => {
     expect(mockOutputSuccess.mock.calls[0][0].messages[0].senderName).toBe('Carol');
   });
 
-  it('multi-chat search skips a blocked chat (no request to it) and reports it as CHAT_BLOCKED', async () => {
-    mockResolveEntity
-      .mockResolvedValueOnce({ id: BigInt(100), className: 'Channel' })
-      .mockRejectedValueOnce(new TgError('Chat is blocked by local read-access policy (blocked-chats.txt)', 'CHAT_BLOCKED'));
-    mockGetMessages.mockResolvedValueOnce([createMockMessage({ id: 1, message: 'open result' })]);
-    await messageSearchAction.call(createMockCommandContext({ chat: '@open,@secret', query: 'x' }) as any);
+  it('multi-chat search silently skips a blocked chat (no request to it, no partial/errors, no exit 1)', async () => {
+    const exitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      mockResolveEntity
+        .mockResolvedValueOnce({ id: BigInt(100), className: 'Channel' })
+        .mockRejectedValueOnce(new TgError('Chat is blocked by local read-access policy (blocked-chats.txt)', 'CHAT_BLOCKED'));
+      mockGetMessages.mockResolvedValueOnce([createMockMessage({ id: 1, message: 'open result' })]);
+      await messageSearchAction.call(createMockCommandContext({ chat: '@open,@secret', query: 'x' }) as any);
 
-    expect(mockGetMessages).toHaveBeenCalledOnce();
-    const data = mockOutputSuccess.mock.calls[0][0];
-    expect(data.messages.map((m: any) => m.text)).toEqual(['open result']);
-    expect(data.partial).toBe(true);
-    expect(data.errors).toEqual([expect.objectContaining({ input: '@secret', code: 'CHAT_BLOCKED' })]);
+      expect(mockGetMessages).toHaveBeenCalledOnce();
+      const data = mockOutputSuccess.mock.calls[0][0];
+      expect(data.messages.map((m: any) => m.text)).toEqual(['open result']);
+      expect(data.partial).toBe(false);
+      expect(data.errors).toEqual([]);
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = exitCode;
+    }
   });
 
   it('global search hides blocked messages, keeps offset in raw results and lowers total', async () => {
