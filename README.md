@@ -326,7 +326,7 @@ tg daemon stop                   # Stop the running daemon
 tg daemon status                 # Check daemon status (running, pid, uptime)
 ```
 
-Start the daemon once, then use `--daemon` for chat, message, media, user and contact commands. Each command uses the existing MTProto connection and entity cache. `message watch` uses the same connection. Commands keep their normal validation, JSON/JSONL/TOON/human output and `--fields` behavior.
+Start the daemon once, then use `--daemon` for chat, message, media, user and contact commands. Each command uses the existing MTProto connection and entity cache. `message watch` uses the same connection. Commands keep their normal validation, JSON/JSONL/TOON/human output and `--fields` behavior. In this fork, `chat folders`, `chat similar` and `message click` are routed through the daemon as well (CLI `--daemon` and API `execute`), together with the `chat list --archived/--folder` and `message send --html` flags.
 
 ```bash
 tg daemon start --idle-timeout 0

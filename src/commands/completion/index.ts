@@ -41,7 +41,7 @@ _tg_completions() {
   case "\${COMP_WORDS[1]}" in
     auth)    COMPREPLY=( $(compgen -W "login status logout" -- "$cur") ) ;;
     session) COMPREPLY=( $(compgen -W "export import import-desktop" -- "$cur") ) ;;
-    chat)    COMPREPLY=( $(compgen -W "list info join leave resolve invite-info members topics search create edit kick" -- "$cur") ) ;;
+    chat)    COMPREPLY=( $(compgen -W "list folders info join leave resolve invite-info members topics search similar create edit kick" -- "$cur") ) ;;
     message) COMPREPLY=( $(compgen -W "history search get pinned send forward react click replies edit delete pin unpin poll watch" -- "$cur") ) ;;
     media)   COMPREPLY=( $(compgen -W "download send" -- "$cur") ) ;;
     user)    COMPREPLY=( $(compgen -W "profile block unblock blocked" -- "$cur") ) ;;
@@ -82,8 +82,8 @@ _tg() {
       case $words[1] in
         auth)      _describe 'subcommand' '(login:Log in status:Auth status logout:Log out)' ;;
         session)   _describe 'subcommand' '(export:Export session import:Import session import-desktop:Import Desktop account)' ;;
-        chat)      _describe 'subcommand' '(list:List chats info:Chat info join:Join leave:Leave resolve:Resolve invite-info:Invite info members:Members topics:Topics search:Search create:Create edit:Edit kick:Kick)' ;;
-        message)   _describe 'subcommand' '(history:History search:Search get:Get pinned:Pinned send:Send forward:Forward react:React replies:Replies edit:Edit delete:Delete pin:Pin unpin:Unpin poll:Poll watch:Watch)' ;;
+        chat)      _describe 'subcommand' '(list:List chats folders:Folders info:Chat info join:Join leave:Leave resolve:Resolve invite-info:Invite info members:Members topics:Topics search:Search similar:Similar channels create:Create edit:Edit kick:Kick)' ;;
+        message)   _describe 'subcommand' '(history:History search:Search get:Get pinned:Pinned send:Send forward:Forward react:React click:Click button replies:Replies edit:Edit delete:Delete pin:Pin unpin:Unpin poll:Poll watch:Watch)' ;;
         media)     _describe 'subcommand' '(download:Download send:Send)' ;;
         user)      _describe 'subcommand' '(profile:Profile block:Block unblock:Unblock blocked:Blocked)' ;;
         contact)   _describe 'subcommand' '(list:List add:Add delete:Delete search:Search)' ;;
@@ -110,8 +110,8 @@ complete -c tg -n '__fish_use_subcommand' -a completion -d 'Generate shell compl
 
 complete -c tg -n '__fish_seen_subcommand_from auth' -a 'login status logout'
 complete -c tg -n '__fish_seen_subcommand_from session' -a 'export import import-desktop'
-complete -c tg -n '__fish_seen_subcommand_from chat' -a 'list info join leave resolve invite-info members topics search create edit kick'
-complete -c tg -n '__fish_seen_subcommand_from message' -a 'history search get pinned send forward react replies edit delete pin unpin poll watch'
+complete -c tg -n '__fish_seen_subcommand_from chat' -a 'list folders info join leave resolve invite-info members topics search similar create edit kick'
+complete -c tg -n '__fish_seen_subcommand_from message' -a 'history search get pinned send forward react click replies edit delete pin unpin poll watch'
 complete -c tg -n '__fish_seen_subcommand_from media' -a 'download send'
 complete -c tg -n '__fish_seen_subcommand_from user' -a 'profile block unblock blocked'
 complete -c tg -n '__fish_seen_subcommand_from contact' -a 'list add delete search'

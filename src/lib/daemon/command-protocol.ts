@@ -6,8 +6,9 @@ import { isAbsolute } from 'node:path';
 
 /** Named CLI operations exposed by execute; lifecycle/auth remain separate. */
 export const DAEMON_COMMANDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  chat: Object.freeze(['list', 'info', 'join', 'leave', 'resolve', 'invite-info', 'members', 'topics', 'search', 'create', 'edit', 'kick']),
-  message: Object.freeze(['history', 'search', 'get', 'pinned', 'send', 'forward', 'react', 'replies', 'edit', 'delete', 'pin', 'unpin', 'poll']),
+  // Fork commands: chat folders, chat similar, message click.
+  chat: Object.freeze(['list', 'folders', 'info', 'join', 'leave', 'resolve', 'invite-info', 'members', 'topics', 'search', 'similar', 'create', 'edit', 'kick']),
+  message: Object.freeze(['history', 'search', 'get', 'pinned', 'send', 'forward', 'react', 'click', 'replies', 'edit', 'delete', 'pin', 'unpin', 'poll']),
   media: Object.freeze(['download', 'send']),
   user: Object.freeze(['profile', 'block', 'unblock', 'blocked']),
   contact: Object.freeze(['list', 'add', 'delete', 'search']),

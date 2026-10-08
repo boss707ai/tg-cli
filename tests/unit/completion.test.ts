@@ -65,6 +65,34 @@ describe('completion command', () => {
   });
 });
 
+describe('completion: fork commands', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { stdoutSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true); });
+  afterEach(() => { stdoutSpy.mockRestore(); });
+
+  async function script(shell: string): Promise<string> {
+    const cmd = createCompletionCommand();
+    cmd.exitOverride();
+    await cmd.parseAsync(['node', 'completion', shell]);
+    return stdoutSpy.mock.calls.map((c) => c[0]).join('');
+  }
+
+  it('offers chat folders/similar and message click in bash, zsh and fish', async () => {
+    const bash = await script('bash');
+    expect(bash).toMatch(/chat\)\s+COMPREPLY=\( \$\(compgen -W "[^"]*\bfolders\b[^"]*\bsimilar\b/);
+    expect(bash).toMatch(/message\)\s+COMPREPLY=\( \$\(compgen -W "[^"]*\bclick\b/);
+    stdoutSpy.mockClear();
+    const zsh = await script('zsh');
+    expect(zsh).toContain('folders:Folders');
+    expect(zsh).toContain('similar:Similar channels');
+    expect(zsh).toContain('click:Click button');
+    stdoutSpy.mockClear();
+    const fish = await script('fish');
+    expect(fish).toMatch(/__fish_seen_subcommand_from chat' -a '[^']*\bfolders\b[^']*\bsimilar\b/);
+    expect(fish).toMatch(/__fish_seen_subcommand_from message' -a '[^']*\bclick\b/);
+  });
+});
+
 describe('outputError used by completion', () => {
   it('is the same helper as other commands', () => {
     expect(typeof outputError).toBe('function');
