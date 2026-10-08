@@ -207,11 +207,10 @@ describe('fork commands across real daemon processes', () => {
       const subscriptions = qEvents('subscribe').length;
       const result = await q(['message', 'watch', '@secret_chan']);
       expect(result.code).toBe(1);
-      // The daemon refuses the subscription through resolveEntity's guard. Upstream's
-      // watch maps every subscribe failure to DAEMON_CONNECTION_FAILED; the reason
-      // survives in the message (see report: open question about tgCode).
+      // The daemon refuses the subscription through resolveEntity's guard; watch
+      // reports the daemon's application code (data.tgCode), not a connection failure.
       expect(JSON.parse(result.stdout.trim().split('\n').at(-1)!)).toMatchObject({
-        ok: false, error: expect.stringContaining('blocked by local read-access policy'),
+        ok: false, code: 'CHAT_BLOCKED', error: expect.stringContaining('blocked by local read-access policy'),
       });
       expect(qEvents('subscribe')).toHaveLength(subscriptions);
     });

@@ -102,6 +102,19 @@ describe('message watch', () => {
     expect(process.listenerCount('SIGTERM')).toBe(sigterm);
   });
 
+  it('reports the daemon\'s application code (data.tgCode), e.g. CHAT_BLOCKED for a blocked chat', async () => {
+    mockSocketExists.mockReturnValue(true);
+    // Shape of DaemonRpcError: the server puts a TgError code into data.tgCode.
+    mockWatch.mockRejectedValueOnce(Object.assign(
+      new Error('Chat is blocked by local read-access policy (blocked-chats.txt)'),
+      { code: -32000, data: { tgCode: 'CHAT_BLOCKED' } },
+    ));
+    const cmd = { optsWithGlobals: () => ({ profile: 'default' }) };
+    await messageWatchAction.call(cmd as any, '@secret');
+    expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('blocked by local read-access policy'), 'CHAT_BLOCKED');
+    expect(mockClose).toHaveBeenCalledOnce();
+  });
+
   it('streams each daemon notification through outputSuccess', async () => {
     mockSocketExists.mockReturnValue(true);
     mockWatch.mockImplementation(async (_params: unknown, onMessage: (p: unknown) => void) => {

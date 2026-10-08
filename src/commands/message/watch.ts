@@ -56,9 +56,13 @@ export async function messageWatchAction(this: Command, chatInput: string): Prom
       },
     );
   } catch (err: unknown) {
+    // Like route.ts: an application error from the daemon (e.g. CHAT_BLOCKED from
+    // resolveEntity's guard) carries its code in data.tgCode; anything else is a
+    // connection failure.
+    const data = (err as { data?: { tgCode?: unknown } } | null)?.data;
     outputError(
       `Watch failed: ${(err as Error).message}`,
-      ErrorCode.DAEMON_CONNECTION_FAILED,
+      typeof data?.tgCode === 'string' ? data.tgCode : ErrorCode.DAEMON_CONNECTION_FAILED,
     );
   } finally {
     process.removeListener('SIGINT', stop);
