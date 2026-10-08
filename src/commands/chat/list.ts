@@ -158,13 +158,15 @@ export async function chatListAction(this: Command): Promise<void> {
 
     // Plain list: one request for offset+limit dialogs; only if blocked chats were
     // hidden and more dialogs exist do we page further to fill the page.
-    const { chats, total } = await fetchFilteredPage(
+    // total = visible chats seen (the server count would reveal how many are
+    // hidden); hasMore tells whether a next page may exist, like with --type.
+    const { chats, total, hasMore } = await fetchFilteredPage(
       client,
       (c) => !isBlockedDialog(c),
       offset,
       limit,
       offset + limit,
     );
-    outputSuccess({ chats, total });
+    outputSuccess({ chats, total, hasMore });
   });
 }

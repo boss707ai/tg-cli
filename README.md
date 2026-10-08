@@ -266,6 +266,12 @@ tg chat edit <chat> [--title TEXT] [--description TEXT]       # Edit chat title/
 tg chat kick <chat> <user>                                   # Kick a user from a chat
 ```
 
+`chat list` (plain and `--type`) returns `{ chats, total, hasMore }`: `total`
+counts the visible chats seen while filling the page (not the server-side dialog
+count, which would include blocked chats), and `hasMore: true` means a next page
+may exist — continue with `--offset`. With `--folder`/`--archived` the whole set
+is read, so `total` is the exact number of matching chats and there is no `hasMore`.
+
 ### Messages
 
 ```bash

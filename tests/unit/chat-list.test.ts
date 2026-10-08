@@ -123,7 +123,9 @@ describe('chatListAction', () => {
     const data = mockOutputSuccess.mock.calls[0][0];
     expect(data.chats).toHaveLength(2);
     // total counts the returned (post-filter) set, not the server-side dialog count
+    // (that would reveal how many chats the blocklist hides); hasMore signals the next page
     expect(data.total).toBe(2);
+    expect(data.hasMore).toBe(false);
     expect(data.chats[0].title).toBe('Group One');
     expect(data.chats[0].type).toBe('group');
     expect(data.chats[1].title).toBe('Channel Two');
@@ -250,6 +252,8 @@ describe('chatListAction', () => {
     expect(data.chats).toHaveLength(10);
     expect(data.chats[0].title).toBe('Chat 6');
     expect(data.chats[9].title).toBe('Chat 15');
+    // A full first batch means the dialog list may continue
+    expect(data.hasMore).toBe(true);
   });
 
   it('handles empty dialog list', async () => {
@@ -263,6 +267,7 @@ describe('chatListAction', () => {
     const data = mockOutputSuccess.mock.calls[0][0];
     expect(data.chats).toHaveLength(0);
     expect(data.total).toBe(0);
+    expect(data.hasMore).toBe(false);
   });
 
   it('includes total count in output', async () => {

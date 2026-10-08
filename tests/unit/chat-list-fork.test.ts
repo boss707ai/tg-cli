@@ -103,6 +103,26 @@ describe('chat list: blocklist on every path', () => {
     expect(titles()).toEqual(['Chat 3', 'Chat 4']);
   });
 
+  it('plain list reports hasMore like --type: true while dialogs may continue, false once exhausted', async () => {
+    blocked.add('2');
+    // limit 2: first request asks for 2, one is hidden -> pages on and fills the page from a full batch
+    mockGetDialogs
+      .mockResolvedValueOnce([dialog(1), dialog(2)])
+      .mockResolvedValueOnce(Array.from({ length: 100 }, (_, i) => dialog(3 + i)));
+    await chatListAction.call(ctx({ limit: '2' }));
+    expect(titles()).toEqual(['Chat 1', 'Chat 3']);
+    // total = visible chats seen so far (1 + 100), never the server-side count
+    expect(output()).toMatchObject({ total: 101, hasMore: true });
+
+    mockOutputSuccess.mockClear();
+    mockGetDialogs.mockReset()
+      .mockResolvedValueOnce([dialog(1), dialog(2)])
+      .mockResolvedValueOnce([dialog(3)]);
+    await chatListAction.call(ctx({ limit: '2' }));
+    expect(titles()).toEqual(['Chat 1', 'Chat 3']);
+    expect(output()).toMatchObject({ total: 2, hasMore: false });
+  });
+
   it('plain list without blocked chats keeps the single upstream request', async () => {
     mockGetDialogs.mockResolvedValueOnce([dialog(1), dialog(2)]);
     await chatListAction.call(ctx({ limit: '2' }));
