@@ -4,6 +4,7 @@ import { withAuth } from '../../lib/with-auth.js';
 import { outputSuccess } from '../../lib/output.js';
 import { resolveEntity } from '../../lib/peer.js';
 import { bigIntToString } from '../../lib/serialize.js';
+import { isBlockedEntity } from '../../lib/blocklist.js';
 import type { GlobalOptions } from '../../lib/types.js';
 
 /**
@@ -28,6 +29,9 @@ function chatType(entity: any): string {
  * The API returns messages.Chats or messages.ChatsSlice. ChatsSlice carries a
  * `count` field: the total available (Premium accounts get the full list,
  * non-Premium see a truncated set), which is reported as `totalAvailable`.
+ *
+ * Channels on the local read-access blocklist are dropped from the list and
+ * `totalAvailable` is lowered by the number hidden.
  */
 export async function chatSimilarAction(
   this: Command,
@@ -44,8 +48,11 @@ export async function chatSimilarAction(
       new Api.channels.GetChannelRecommendations({ channel }),
     );
 
-    const chats = ((res as any).chats ?? [])
-      .filter((c: any) => c.className === 'Channel' || c.className === 'Chat')
+    const candidates = ((res as any).chats ?? [])
+      .filter((c: any) => c.className === 'Channel' || c.className === 'Chat');
+    const visible = candidates.filter((c: any) => !isBlockedEntity(c));
+    const hidden = candidates.length - visible.length;
+    const chats = visible
       .map((c: any) => ({
         id: bigIntToString(c.id),
         title: c.title ?? '',
@@ -55,7 +62,8 @@ export async function chatSimilarAction(
       }));
 
     // ChatsSlice => truncated list; `count` is the true total (Premium-gated).
-    const totalAvailable = (res as any).count ?? chats.length;
+    const count = (res as any).count;
+    const totalAvailable = count != null ? Math.max(0, count - hidden) : chats.length;
 
     outputSuccess({ chats, total: chats.length, totalAvailable });
   });

@@ -3,6 +3,7 @@ import { Api } from 'telegram';
 import { withAuth } from '../../lib/with-auth.js';
 import { outputSuccess, outputError } from '../../lib/output.js';
 import { markedPeerId } from '../../lib/serialize.js';
+import { isBlockedEntity } from '../../lib/blocklist.js';
 import { validatePagination } from '../../lib/validate.js';
 import { formatError } from '../../lib/errors.js';
 import type { GlobalOptions } from '../../lib/types.js';
@@ -23,6 +24,7 @@ function chatType(entity: any): string {
  *
  * Searches for public channels and groups globally via contacts.Search.
  * Returns the chats array from the API response (channels, supergroups, groups).
+ * Chats on the local read-access blocklist are dropped.
  * Options: --limit (default 20)
  */
 export async function chatSearchAction(this: Command, query: string): Promise<void> {
@@ -43,7 +45,7 @@ export async function chatSearchAction(this: Command, query: string): Promise<vo
     );
 
     const chats = ((found as any).chats ?? [])
-      .filter((c: any) => c.className === 'Channel' || c.className === 'Chat')
+      .filter((c: any) => (c.className === 'Channel' || c.className === 'Chat') && !isBlockedEntity(c))
       .map((c: any) => ({
         id: markedPeerId(c),
         title: c.title ?? '',

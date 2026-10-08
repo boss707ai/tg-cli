@@ -6,6 +6,7 @@ import { extractInviteHash } from '../../lib/peer.js';
 import { markedPeerId } from '../../lib/serialize.js';
 import type { GlobalOptions } from '../../lib/types.js';
 import { ErrorCode } from '../../lib/error-codes.js';
+import { assertChatNotBlocked } from '../../lib/blocklist.js';
 
 /**
  * Action handler for `tg chat invite-info <link>`.
@@ -15,6 +16,9 @@ import { ErrorCode } from '../../lib/error-codes.js';
  * - ChatInviteAlready: already a member
  * - ChatInvite: preview info (title, about, member count)
  * - ChatInvitePeek: temporary peek with expiry
+ *
+ * When Telegram returns the chat entity (Already/Peek) and it is on the local
+ * read-access blocklist, the command fails with CHAT_BLOCKED instead.
  */
 export async function chatInviteInfoAction(this: Command, link: string): Promise<void> {
   const opts = this.optsWithGlobals() as GlobalOptions;
@@ -24,6 +28,7 @@ export async function chatInviteInfoAction(this: Command, link: string): Promise
     const result = await client.invoke(
       new Api.messages.CheckChatInvite({ hash }),
     );
+    assertChatNotBlocked((result as any).chat);
 
     if (result instanceof Api.ChatInviteAlready) {
       const chat = (result as any).chat;

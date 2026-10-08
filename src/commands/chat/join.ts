@@ -6,6 +6,7 @@ import { resolveEntity, extractInviteHash } from '../../lib/peer.js';
 import { markedPeerId } from '../../lib/serialize.js';
 import type { GlobalOptions } from '../../lib/types.js';
 import { ErrorCode } from '../../lib/error-codes.js';
+import { assertChatNotBlocked } from '../../lib/blocklist.js';
 
 /**
  * Detect if a target string looks like an invite link (contains /+ or /joinchat/).
@@ -19,7 +20,11 @@ function isInviteLink(target: string): boolean {
  *
  * Joins a group or channel by username or invite link.
  * - Username/ID: resolves entity, calls JoinChannel
- * - Invite link: extracts hash, calls ImportChatInvite
+ * - Invite link: extracts hash, checks it with CheckChatInvite, calls ImportChatInvite
+ *
+ * A chat on the local read-access blocklist is refused with CHAT_BLOCKED before
+ * joining: by resolveEntity for a username/ID, and for an invite link when
+ * CheckChatInvite reveals the chat entity (ChatInviteAlready/ChatInvitePeek).
  */
 export async function chatJoinAction(this: Command, target: string): Promise<void> {
   const opts = this.optsWithGlobals() as GlobalOptions;
@@ -28,6 +33,10 @@ export async function chatJoinAction(this: Command, target: string): Promise<voi
     if (isInviteLink(target)) {
       // Join via invite link
       const hash = extractInviteHash(target);
+      const invite = await client.invoke(
+        new Api.messages.CheckChatInvite({ hash }),
+      );
+      assertChatNotBlocked((invite as any).chat);
       try {
         const result = await client.invoke(
           new Api.messages.ImportChatInvite({ hash }),

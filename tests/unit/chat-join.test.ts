@@ -61,6 +61,7 @@ vi.mock('telegram', () => ({
       JoinChannel: vi.fn().mockImplementation((args: any) => ({ className: 'channels.JoinChannel', ...args })),
     },
     messages: {
+      CheckChatInvite: vi.fn().mockImplementation((args: any) => ({ className: 'messages.CheckChatInvite', ...args })),
       ImportChatInvite: vi.fn().mockImplementation((args: any) => ({ className: 'messages.ImportChatInvite', ...args })),
     },
   },
@@ -125,15 +126,20 @@ describe('chatJoinAction', () => {
 
   it('joins by invite link via ImportChatInvite', async () => {
     mockExtractInviteHash.mockReturnValueOnce('abc123hash');
-    mockInvoke.mockResolvedValueOnce({
-      chats: [{ id: BigInt(200), title: 'Invite Group' }],
-    });
+    // Fork: the invite is checked first (blocklist guard on a known chat entity);
+    // a plain ChatInvite carries no entity, so the join proceeds.
+    mockInvoke
+      .mockResolvedValueOnce({ className: 'ChatInvite', title: 'Invite Group' })
+      .mockResolvedValueOnce({
+        chats: [{ id: BigInt(200), title: 'Invite Group' }],
+      });
 
     const ctx = createMockCommandContext();
     await chatJoinAction.call(ctx as any, 'https://t.me/+abc123hash');
 
     expect(mockExtractInviteHash).toHaveBeenCalledWith('https://t.me/+abc123hash');
-    expect(mockInvoke).toHaveBeenCalledOnce();
+    expect(mockInvoke.mock.calls.map(([request]) => request.className)).toEqual(['messages.CheckChatInvite', 'messages.ImportChatInvite']);
+    expect(mockInvoke.mock.calls[1][0].hash).toBe('abc123hash');
     expect(mockOutputSuccess).toHaveBeenCalledOnce();
     const data = mockOutputSuccess.mock.calls[0][0];
     expect(data.joined).toBe(true);

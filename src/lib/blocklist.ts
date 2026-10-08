@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { TgError } from './errors.js';
 
 /**
  * Local read-access blocklist (privacy guard).
@@ -90,6 +91,17 @@ export function isBlockedEntity(entity: any): boolean {
   if (isExplicitlyBlockedEntity(entity)) return true;
   if (bl.blockAllPrivate && entity?.className === 'User') return true;
   return false;
+}
+
+/**
+ * Refuse a chat entity that Telegram returned without resolveEntity (e.g. from
+ * CheckChatInvite) when it is on the blocklist: throws the same CHAT_BLOCKED
+ * error as the resolveEntity guard. A missing entity passes.
+ */
+export function assertChatNotBlocked(entity: any): void {
+  if (entity && isBlockedEntity(entity)) {
+    throw new TgError('Chat is blocked by local read-access policy (blocked-chats.txt)', 'CHAT_BLOCKED');
+  }
 }
 
 /**
