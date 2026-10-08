@@ -59,6 +59,12 @@ entity). `chat list` hides blocked chats on every path (`--type`, `--folder`,
 `--archived`, pagination), and global `message search` drops their messages and
 reduces `total` accordingly.
 
+The same rules apply to commands run through the daemon (`--daemon`, API
+`execute`, `message watch`): they use the same `resolveEntity` guard and search
+filter. The daemon reads the blocklist named by its own environment
+(`TG_BLOCKLIST`/`HOME` at `tg daemon start`) on first use and keeps it until it
+is restarted.
+
 ## Setup
 
 The fastest way to get started — use a built-in client preset (no API credentials needed):

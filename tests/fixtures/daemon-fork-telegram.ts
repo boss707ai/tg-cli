@@ -61,6 +61,23 @@ function dialog(entity: Api.User | Api.Channel, title: string) {
   };
 }
 
+/**
+ * Async iterable shaped like gramjs RequestIter ({ next } object, no generator):
+ * the daemon's request-client Proxy calls next() with the proxy as receiver,
+ * which native async generator objects reject.
+ */
+function asyncIterable<T>(items: T[]): AsyncIterable<T> {
+  return {
+    [Symbol.asyncIterator]() {
+      let index = 0;
+      return {
+        next: async () => (index < items.length ? { value: items[index++], done: false } : { value: undefined as never, done: true }),
+        return: async () => ({ value: undefined as never, done: true }),
+      };
+    },
+  };
+}
+
 const keyboard = new Api.ReplyInlineMarkup({
   rows: [new Api.KeyboardButtonRow({ buttons: [
     new Api.KeyboardButtonCallback({ text: 'Yes', data: Buffer.from('answer:yes') }),
@@ -89,9 +106,9 @@ export class TelegramClient {
     return Object.assign(dialogs.slice(0, options.limit), { total: dialogs.length });
   }
 
-  async *iterDialogs(_options: unknown): AsyncGenerator<unknown> {
+  iterDialogs(_options: unknown): AsyncIterable<unknown> {
     record('iterDialogs');
-    for (const entity of [me, bot, friend, source, secret]) yield { entity };
+    return asyncIterable([me, bot, friend, source, secret].map((entity) => ({ entity })));
   }
 
   async getMessages(entity: Api.User | Api.Channel, options: { limit?: number; ids?: number[] }): Promise<Api.Message[]> {
@@ -110,11 +127,7 @@ export class TelegramClient {
       message(13, 'needle from a private friend', friend),
       message(14, 'needle in the open channel', source),
     ];
-    const iterator = {
-      total: hits.length,
-      async *[Symbol.asyncIterator]() { yield* hits.slice(0, options.limit ?? hits.length); },
-    };
-    return iterator;
+    return Object.assign(asyncIterable(hits.slice(0, options.limit ?? hits.length)), { total: hits.length });
   }
 
   async sendMessage(entity: Api.User | Api.Channel, options: { message: string; parseMode?: string }): Promise<Api.Message> {

@@ -22,23 +22,23 @@ describe('fork commands across real daemon processes', () => {
   let dir: string;
   let cliEntry: string;
   let config: string;
-  let journalPath: string;
-  let blocklistPath: string;
-  let paths: DaemonPaths;
-  let daemonPid: number;
+  /** Profile p: empty blocklist (fork commands); profile q: synthetic blocklist (privacy guard). */
+  const profiles: Record<string, { journal: string; blocklist: string; paths: DaemonPaths; pid: number }> = {} as any;
   const children = new Set<ChildProcess>();
 
-  const journal = (): JournalEvent[] => (existsSync(journalPath)
-    ? readFileSync(journalPath, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
+  const journalOf = (profile: string): JournalEvent[] => (existsSync(profiles[profile].journal)
+    ? readFileSync(profiles[profile].journal, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
     : []);
+  const journal = () => journalOf('p');
 
-  function cli(args: string[]): Promise<ProcessResult> {
-    const child = spawn(process.execPath, [cliEntry, '--config', config, '--profile', 'p', '--quiet', ...args], {
+  function cli(args: string[], profile = 'p'): Promise<ProcessResult> {
+    const child = spawn(process.execPath, [cliEntry, '--config', config, '--profile', profile, '--quiet', ...args], {
       stdio: ['pipe', 'pipe', 'pipe'],
       // Synthetic credentials and an isolated HOME/blocklist only. Never a real account.
+      // The daemon inherits TG_BLOCKLIST from the `daemon start` invocation.
       env: {
         PATH: process.env.PATH, HOME: dir, TG_API_ID: '1', TG_API_HASH: 'synthetic-api-hash',
-        TG_DAEMON_API_TEST_JOURNAL: journalPath, TG_BLOCKLIST: blocklistPath,
+        TG_DAEMON_API_TEST_JOURNAL: profiles[profile].journal, TG_BLOCKLIST: profiles[profile].blocklist,
       },
     });
     children.add(child);
@@ -63,8 +63,8 @@ describe('fork commands across real daemon processes', () => {
     return JSON.parse(lines[0]);
   }
 
-  async function rpc(method: string, params: Record<string, unknown> = {}): Promise<any> {
-    const client = new DaemonClient(paths.socketPath);
+  async function rpc(method: string, params: Record<string, unknown> = {}, profile = 'p'): Promise<any> {
+    const client = new DaemonClient(profiles[profile].paths.socketPath);
     try { return await client.call(method, params, { timeoutMs: 3000 }); } finally { client.close(); }
   }
 
@@ -75,11 +75,16 @@ describe('fork commands across real daemon processes', () => {
     mkdirSync(configDir);
     config = join(configDir, 'config.json');
     writeFileSync(config, '{"profiles":{}}');
-    await new SessionStore(configDir).save('p', 'synthetic-session');
-    journalPath = join(dir, 'events.jsonl');
-    blocklistPath = join(dir, 'blocked-chats.txt');
-    writeFileSync(blocklistPath, '# synthetic blocklist for the daemon process\n');
-    paths = new DaemonPaths(configDir, 'p');
+    const blocklists: Record<string, string[]> = {
+      p: ['# synthetic, nothing blocked'],
+      q: ['# synthetic blocklist for the daemon process', '@secret_chan', '8'],
+    };
+    for (const [profile, lines] of Object.entries(blocklists)) {
+      await new SessionStore(configDir).save(profile, 'synthetic-session');
+      const blocklist = join(dir, `blocked-${profile}.txt`);
+      writeFileSync(blocklist, lines.join('\n') + '\n');
+      profiles[profile] = { journal: join(dir, `events-${profile}.jsonl`), blocklist, paths: new DaemonPaths(configDir, profile), pid: 0 };
+    }
     cliEntry = join(dir, 'bin', 'tg.mjs');
     const plugin: Plugin = { name: 'offline-fork-daemon', setup(builder) {
       builder.onResolve({ filter: /^telegram$/ }, () => ({ path: resolve('tests/fixtures/daemon-fork-telegram.ts') }));
@@ -92,16 +97,19 @@ describe('fork commands across real daemon processes', () => {
       build({ ...options, entryPoints: [resolve('src/bin/tg.ts')], outfile: cliEntry }),
       build({ ...options, entryPoints: [resolve('src/lib/daemon/entry.ts')], outfile: join(dir, 'lib', 'daemon', 'entry.js') }),
     ]);
-    const started = envelope(await cli(['daemon', 'start', '--idle-timeout', '0']));
-    expect(started).toMatchObject({ ok: true, data: { profile: 'p' } });
-    daemonPid = started.data.pid;
-    expect(await rpc('ping')).toBe('pong');
-  }, 20_000);
+    for (const profile of Object.keys(profiles)) {
+      const started = envelope(await cli(['daemon', 'start', '--idle-timeout', '0'], profile));
+      expect(started).toMatchObject({ ok: true, data: { profile } });
+      profiles[profile].pid = started.data.pid;
+      expect(await rpc('ping', {}, profile)).toBe('pong');
+    }
+  }, 30_000);
 
   afterAll(async () => {
     for (const child of children) child.kill('SIGKILL');
-    if (paths?.socketExists()) {
-      try { await rpc('shutdown'); } catch { if (daemonPid) { try { process.kill(daemonPid, 'SIGTERM'); } catch {} } }
+    for (const [profile, { paths, pid }] of Object.entries(profiles)) {
+      if (!paths.socketExists()) continue;
+      try { await rpc('shutdown', {}, profile); } catch { if (pid) { try { process.kill(pid, 'SIGTERM'); } catch {} } }
       await vi.waitFor(() => expect(paths.socketExists()).toBe(false), { timeout: 3000 });
     }
     if (dir) rmSync(dir, { recursive: true, force: true });
@@ -111,7 +119,7 @@ describe('fork commands across real daemon processes', () => {
     expect(envelope(await cli(['--daemon', 'chat', 'folders']))).toEqual({
       ok: true, data: { folders: [{ id: 2, title: 'Work', chatCount: 2, shareable: false }] },
     });
-    expect(journal().filter((e) => e.request === 'messages.GetDialogFilters').map((e) => e.pid)).toEqual([daemonPid]);
+    expect(journal().filter((e) => e.request === 'messages.GetDialogFilters').map((e) => e.pid)).toEqual([profiles.p.pid]);
   });
 
   it('tg --daemon chat similar <channel> runs on the daemon', async () => {
@@ -127,7 +135,7 @@ describe('fork commands across real daemon processes', () => {
     expect(envelope(await cli(['--daemon', 'message', 'click', '@fixturebot', '42', '--row', '1', '--col', '2']))).toMatchObject({
       ok: true, data: { clicked: false, url: 'https://example.org/fixture' },
     });
-    expect(journal().filter((e) => e.request === 'messages.GetBotCallbackAnswer').map((e) => e.pid)).toEqual([daemonPid]);
+    expect(journal().filter((e) => e.request === 'messages.GetBotCallbackAnswer').map((e) => e.pid)).toEqual([profiles.p.pid]);
   });
 
   it('tg --daemon keeps fork flags: chat list --archived/--folder, message send --html', async () => {
@@ -140,7 +148,7 @@ describe('fork commands across real daemon processes', () => {
     expect(envelope(await cli(['--daemon', 'message', 'send', '@fixture', '<b>bold</b>', '--html']))).toMatchObject({
       ok: true, data: { text: '<b>bold</b>' },
     });
-    expect(journal().filter((e) => e.event === 'sendMessage').at(-1)).toMatchObject({ pid: daemonPid, parseMode: 'html' });
+    expect(journal().filter((e) => e.event === 'sendMessage').at(-1)).toMatchObject({ pid: profiles.p.pid, parseMode: 'html' });
   });
 
   it('direct fork commands are refused while the daemon owns the profile', async () => {
@@ -152,8 +160,66 @@ describe('fork commands across real daemon processes', () => {
   });
 
   it('every request ran on the single daemon connection', () => {
-    expect(journal().filter((e) => e.event === 'constructor')).toEqual([{ event: 'constructor', pid: daemonPid }]);
-    expect(journal().filter((e) => e.event === 'connect')).toEqual([{ event: 'connect', pid: daemonPid }]);
-    expect(new Set(journal().map((e) => e.pid))).toEqual(new Set([daemonPid]));
+    expect(journal().filter((e) => e.event === 'constructor')).toEqual([{ event: 'constructor', pid: profiles.p.pid }]);
+    expect(journal().filter((e) => e.event === 'connect')).toEqual([{ event: 'connect', pid: profiles.p.pid }]);
+    expect(new Set(journal().map((e) => e.pid))).toEqual(new Set([profiles.p.pid]));
+  });
+  describe('read-access blocklist inside the daemon (profile q)', () => {
+    const q = (args: string[]) => cli(args, 'q');
+    const qEvents = (event: string) => journalOf('q').filter((e) => e.event === event);
+
+    it('blocked raw input is refused with CHAT_BLOCKED before the daemon touches Telegram', async () => {
+      const lookups = qEvents('getEntity').length;
+      expect(envelope(await q(['--daemon', 'chat', 'info', '@secret_chan']), 1)).toMatchObject({ ok: false, code: 'CHAT_BLOCKED' });
+      expect(envelope(await q(['--daemon', 'message', 'history', '8']), 1)).toMatchObject({ ok: false, code: 'CHAT_BLOCKED' });
+      expect(qEvents('getEntity')).toHaveLength(lookups);
+      expect(await rpc('execute', { argv: ['message', 'history', '--', 'secret_chan'] }, 'q')).toMatchObject({
+        output: { ok: false, code: 'CHAT_BLOCKED' }, exitCode: 1,
+      });
+    });
+
+    it('a resolved entity on the blocklist is refused too (fork commands included)', async () => {
+      const reads = qEvents('getMessages').length;
+      const rpcs = qEvents('invoke').length;
+      expect(envelope(await q(['--daemon', 'message', 'history', '-100555']), 1)).toMatchObject({ ok: false, code: 'CHAT_BLOCKED' });
+      expect(envelope(await q(['--daemon', 'message', 'click', '@friend', '42', '--text', 'Yes']), 1)).toMatchObject({ ok: false, code: 'CHAT_BLOCKED' });
+      expect(qEvents('getMessages')).toHaveLength(reads);
+      expect(qEvents('invoke')).toHaveLength(rpcs);
+    });
+
+    it('global message search through the daemon drops blocked chats and lowers total', async () => {
+      const result = envelope(await q(['--daemon', 'message', 'search', '--query', 'needle']));
+      expect(result.data.messages.map((m: any) => m.text)).toEqual(['needle in saved messages', 'needle in the open channel']);
+      expect(result.data.total).toBe(2);
+      expect(JSON.stringify(result)).not.toMatch(/secret|friend/i);
+      expect(qEvents('iterMessages').map((e) => e.pid)).toEqual([profiles.q.pid]);
+    });
+
+    it('chat list (plain and --folder) through the daemon hides blocked chats', async () => {
+      const plain = envelope(await q(['--daemon', 'chat', 'list']));
+      expect(plain.data.chats.map((c: any) => c.title)).toEqual(['Saved Messages', 'Fixture Bot', 'Open source channel']);
+      expect(plain.data.total).toBe(3);
+      const folder = envelope(await q(['--daemon', 'chat', 'list', '--folder', 'Work']));
+      expect(folder.data.chats.map((c: any) => c.title)).toEqual(['Open source channel']);
+    });
+
+    it('message watch (daemon subscribe) refuses a blocked chat', async () => {
+      const subscriptions = qEvents('subscribe').length;
+      const result = await q(['message', 'watch', '@secret_chan']);
+      expect(result.code).toBe(1);
+      // The daemon refuses the subscription through resolveEntity's guard. Upstream's
+      // watch maps every subscribe failure to DAEMON_CONNECTION_FAILED; the reason
+      // survives in the message (see report: open question about tgCode).
+      expect(JSON.parse(result.stdout.trim().split('\n').at(-1)!)).toMatchObject({
+        ok: false, error: expect.stringContaining('blocked by local read-access policy'),
+      });
+      expect(qEvents('subscribe')).toHaveLength(subscriptions);
+    });
+
+    it('the same chats stay readable on a daemon without that blocklist (profile p)', async () => {
+      expect(envelope(await cli(['--daemon', 'message', 'history', 'secret_chan']))).toMatchObject({
+        ok: true, data: { messages: [{ text: 'history of 555' }] },
+      });
+    });
   });
 });
