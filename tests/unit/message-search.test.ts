@@ -115,6 +115,12 @@ vi.mock('../../src/lib/peer.js', () => ({
   assertForum: (...args: any[]) => mockAssertForum(...args),
 }));
 
+// Mock read-access blocklist (keeps tests independent of the real blocked-chats.txt)
+const mockIsBlockedPeer = vi.fn().mockReturnValue(false);
+vi.mock('../../src/lib/blocklist.js', () => ({
+  isBlockedPeer: (...args: any[]) => mockIsBlockedPeer(...args),
+}));
+
 // Helper to create mock message objects
 function createMockMessage(overrides: Record<string, any> = {}) {
   const defaults = {
@@ -240,6 +246,36 @@ describe('messageSearchAction', () => {
     expect(data.messages[0].chatTitle).toBe('Channel Alpha');
     expect(data.messages[1].chatId).toBe('300');
     expect(data.messages[1].chatTitle).toBe('Group Beta');
+  });
+
+  it('global search hides results from blocklisted chats and adjusts total', async () => {
+    const messages = [
+      createMockMessage({
+        id: 10,
+        message: 'From a blocked chat',
+        peerId: { channelId: BigInt(200), chatId: null, userId: null },
+        chat: { title: 'Blocked Channel' },
+      }),
+      createMockMessage({
+        id: 20,
+        message: 'From an open chat',
+        peerId: { channelId: null, chatId: BigInt(300), userId: null },
+        chat: { title: 'Open Group' },
+      }),
+    ];
+    (messages as any).total = 2;
+    mockGetMessages.mockResolvedValueOnce(messages);
+    mockIsBlockedPeer.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    const ctx = createMockCommandContext({ query: 'keyword' });
+    await messageSearchAction.call(ctx as any);
+
+    expect(mockIsBlockedPeer).toHaveBeenCalledWith(messages[0].peerId, messages[0].chat);
+    const data = mockOutputSuccess.mock.calls[0][0];
+    expect(data.messages).toHaveLength(1);
+    expect(data.messages[0].chatTitle).toBe('Open Group');
+    expect(data.messages[0].text).not.toContain('blocked');
+    expect(data.total).toBe(1);
   });
 
   it('outputs error when --query is missing', async () => {

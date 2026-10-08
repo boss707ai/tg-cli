@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import { outputSuccess, outputError, logStatus } from '../../lib/output.js';
 import { resolveEntity, assertForum } from '../../lib/peer.js';
+import { isBlockedPeer } from '../../lib/blocklist.js';
 import { serializeMessage, serializeSearchResult, bigIntToString } from '../../lib/serialize.js';
 import { FILTER_MAP, VALID_FILTERS } from '../../lib/media-utils.js';
 import { withAuth } from '../../lib/with-auth.js';
@@ -132,7 +133,13 @@ export async function messageSearchAction(this: Command): Promise<void> {
       // Global search (READ-04)
       const messages = await client.getMessages(undefined, { ...baseSearchParams, limit, addOffset: offset });
 
-      const serialized = messages.map((msg: any) => {
+      // Global search bypasses resolveEntity, so apply the read-access blocklist here
+      const visible = messages.filter(
+        (msg: any) => !isBlockedPeer(msg.peerId, msg.chat || (msg as any)._chat),
+      );
+      const hidden = messages.length - visible.length;
+
+      const serialized = visible.map((msg: any) => {
         const peerId = msg.peerId;
         const chatId = bigIntToString(
           peerId?.channelId || peerId?.chatId || peerId?.userId,
@@ -152,7 +159,7 @@ export async function messageSearchAction(this: Command): Promise<void> {
 
       outputSuccess({
         messages: serialized,
-        total: (messages as any).total ?? 0,
+        total: Math.max(0, ((messages as any).total ?? 0) - hidden),
       });
     }
   });

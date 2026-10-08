@@ -13,7 +13,8 @@ import { join } from 'node:path';
  *   type:private     — block ALL private (1:1 user) chats at once
  *
  * Enforced at the peer-resolution chokepoint (peer.ts:resolveEntity) so EVERY
- * command that targets a chat is covered, plus filtered out of `chat list`.
+ * command that targets a chat is covered, plus filtered out of `chat list` and
+ * out of global `message search` results (isBlockedPeer — no chat is resolved there).
  */
 
 const BLOCKLIST_PATH =
@@ -73,6 +74,20 @@ export function isBlockedEntity(entity: any): boolean {
   const uname = entity?.username;
   if (uname && bl.usernames.has(String(uname).toLowerCase())) return true;
   if (bl.blockAllPrivate && entity?.className === 'User') return true;
+  return false;
+}
+
+/**
+ * Match the chat a message belongs to (peerId + optional chat entity) against the
+ * blocklist. Used where messages arrive without peer resolution — global search.
+ */
+export function isBlockedPeer(peerId: any, chatEntity?: any): boolean {
+  const bl = loadBlocklist();
+  if (chatEntity && isBlockedEntity(chatEntity)) return true;
+  const raw = peerId?.channelId ?? peerId?.chatId ?? peerId?.userId;
+  if (raw != null && bl.ids.has(normalizeId(raw.toString()))) return true;
+  const isPrivate = peerId?.userId != null && peerId?.channelId == null && peerId?.chatId == null;
+  if (bl.blockAllPrivate && isPrivate) return true;
   return false;
 }
 
