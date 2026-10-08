@@ -56,8 +56,8 @@ type:private
 Every peer goes through `resolveEntity`, which rejects a blocked chat with
 `CHAT_BLOCKED` both before the network lookup (raw input) and after it (resolved
 entity). `chat list` hides blocked chats on every path (`--type`, `--folder`,
-`--archived`, pagination), and global `message search` drops their messages and
-reduces `total` accordingly.
+`--archived`, pagination), and global `message search` (also `--public` hashtag
+search) drops their messages and reduces `total` accordingly.
 
 The same rules apply to commands run through the daemon (`--daemon`, API
 `execute`, `message watch`): they use the same `resolveEntity` guard and search

@@ -332,12 +332,19 @@ async function searchPublicPosts(
 
   const chats = ((result as any).chats ?? []) as any[];
   const rawMessages = ((result as any).messages ?? []) as any[];
+  let hidden = 0;
+  const visible: SearchResultItem[] = [];
   const messages = rawMessages.map((msg: any) => {
     const chatId = messagePeerMarkedId(msg);
     const chat = chats.find((c) => markedPeerId(c) === chatId)
       ?? chats.find((c) => bigIntToString(c.id) === bigIntToString(msg.peerId?.channelId));
     const title = chat?.title || chat?.username || chatId;
-    return serializeSearchResult(msg, chatId, title);
+    const item = serializeSearchResult(msg, chatId, title);
+    // Public posts arrive without resolveEntity: apply the read-access blocklist here.
+    // The paging cursor below still follows the raw page.
+    if (isBlockedPeer(msg.peerId, chat)) hidden++;
+    else visible.push(item);
+    return item;
   });
 
   const lastRaw = rawMessages[rawMessages.length - 1];
@@ -350,8 +357,8 @@ async function searchPublicPosts(
 
   const floodRaw = (result as any).searchFlood;
   const data: PublicPostSearchResult = {
-    messages,
-    total: (result as any).count ?? messages.length,
+    messages: visible,
+    total: Math.max(0, ((result as any).count ?? messages.length) - hidden),
     hasMore,
     nextRate,
     nextOffsetId: hasMore ? (last?.id ?? null) : null,
