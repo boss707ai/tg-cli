@@ -125,7 +125,7 @@ export async function mediaSendAction(this: Command): Promise<void> {
       const validMsgs = albumMsgs.filter(Boolean);
 
       if (validMsgs.length > 0) {
-        const serialized = validMsgs.map(m => serializeMessage(m as any));
+        const serialized = validMsgs.map(m => serializeMessage(m as any, (m as any)._sender));
         const output: Record<string, any> = { messages: serialized, sent: serialized.length };
         if (validMsgs.length < files.length) {
           output.warning = `Only ${validMsgs.length} of ${files.length} album messages could be retrieved`;
@@ -133,7 +133,7 @@ export async function mediaSendAction(this: Command): Promise<void> {
         outputSuccess(output);
       } else {
         // Fallback: return just the single result message
-        const serialized = serializeMessage(result as any);
+        const serialized = serializeMessage(result as any, (result as any)._sender);
         outputSuccess({
           messages: [serialized],
           sent: 1,
@@ -142,7 +142,7 @@ export async function mediaSendAction(this: Command): Promise<void> {
       }
     } else {
       // Single file: serialize and return
-      const serialized = serializeMessage(result as any);
+      const serialized = serializeMessage(result as any, (result as any)._sender);
       outputSuccess(serialized);
     }
   });

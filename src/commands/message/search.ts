@@ -81,7 +81,7 @@ export async function messageSearchAction(this: Command): Promise<void> {
         const messages = await client.getMessages(entity, { ...baseSearchParams, limit, addOffset: offset });
 
         const serialized = messages.map((msg: any) =>
-          serializeMessage(msg),
+          serializeMessage(msg, msg._sender),
         );
 
         outputSuccess({
@@ -116,7 +116,7 @@ export async function messageSearchAction(this: Command): Promise<void> {
               } else {
                 chatTitle = chat?.title || msgChatId;
               }
-              allResults.push(serializeSearchResult(msg as any, msgChatId, chatTitle));
+              allResults.push(serializeSearchResult(msg as any, msgChatId, chatTitle, (msg as any)._sender));
             }
           } catch (err) {
             logStatus(`Warning: failed to search ${chatId}: ${(err as Error).message}`, quiet);
@@ -147,7 +147,7 @@ export async function messageSearchAction(this: Command): Promise<void> {
           chatTitle = chat?.title || chatId;
         }
 
-        return serializeSearchResult(msg, chatId, chatTitle);
+        return serializeSearchResult(msg, chatId, chatTitle, msg._sender);
       });
 
       outputSuccess({

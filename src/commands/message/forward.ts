@@ -53,7 +53,7 @@ export async function messageForwardAction(this: Command, fromChat: string, msgI
       fromPeer: fromEntity,
     });
 
-    const messages = forwarded.map((msg: any) => serializeMessage(msg));
+    const messages = forwarded.map((msg: any) => serializeMessage(msg, msg._sender));
 
     outputSuccess({
       forwarded: messages.length,

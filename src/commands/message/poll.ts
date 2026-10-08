@@ -146,7 +146,7 @@ export async function messagePollAction(this: Command, chat: string): Promise<vo
       });
 
       const sentMsg = await client.sendFile(entity, { file: inputMedia });
-      const serialized = serializeMessage(sentMsg as any);
+      const serialized = serializeMessage(sentMsg as any, (sentMsg as any)._sender);
       outputSuccess(serialized);
     } catch (err: unknown) {
       const { message, code } = translateTelegramError(err);

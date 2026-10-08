@@ -90,7 +90,7 @@ export async function messageSendAction(this: Command, chat: string, text: strin
       ...(commentTo !== undefined && { commentTo }),
     });
 
-    const serialized = serializeMessage(sentMsg as any);
+    const serialized = serializeMessage(sentMsg as any, (sentMsg as any)._sender);
     outputSuccess(serialized);
   });
 }

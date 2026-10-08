@@ -59,7 +59,7 @@ export async function messageHistoryAction(this: Command, chatInput: string): Pr
 
     // Serialize messages
     let serialized: MessageItem[] = messages.map((msg: any) =>
-      serializeMessage(msg),
+      serializeMessage(msg, msg._sender),
     );
 
     // --since: post-filter messages after the given date
